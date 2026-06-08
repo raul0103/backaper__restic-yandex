@@ -52,6 +52,9 @@
 
 - `rclone.md` — установка и настройка rclone + Yandex Disk.
 - `restic.md` — установка restic, бэкап, исключения и восстановление.
+- `remote-orchestration.md` — restic на каждом сервере, запуск с control-машины по SSH, дамп БД.
+- `central-backup.md` — альтернатива: одна машина, rsync по SSH, restic только на ней.
+- `panel/` — **Laravel UI**: SSH-setup, поиск MODX, исключения, бэкап с дампом БД.
 
 ## Минимальный чек-лист
 
