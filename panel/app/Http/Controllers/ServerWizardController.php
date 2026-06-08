@@ -51,6 +51,9 @@ class ServerWizardController extends Controller
             $update['rclone_token'] = $data['rclone_token'];
         }
 
+        $tokenChanged = filled($data['rclone_token'] ?? null)
+            && trim($data['rclone_token']) !== trim((string) $server->rclone_token);
+
         if (! empty($data['ssh_password'])) {
             $update['ssh_password'] = $data['ssh_password'];
         }
@@ -58,9 +61,15 @@ class ServerWizardController extends Controller
         $server->update($update);
 
         if ($server->isWizardComplete()) {
-            return redirect()
-                ->route('servers.show', $server)
-                ->with('success', 'SSH и restic/rclone сохранены. Можно нажать «Установить restic».');
+            $redirect = redirect()->route('servers.show', $server);
+
+            if ($tokenChanged) {
+                return $redirect
+                    ->with('success', 'Настройки сохранены.')
+                    ->with('warning', 'Токен Яндекс.Диска изменён. На этой странице нажмите «Переустановить restic», чтобы применить его на сервере — иначе бэкапы пойдут в старый аккаунт.');
+            }
+
+            return $redirect->with('success', 'SSH и restic/rclone сохранены.');
         }
 
         return back()->with('success', 'Настройки сохранены');

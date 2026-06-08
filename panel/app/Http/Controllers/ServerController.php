@@ -110,11 +110,21 @@ class ServerController extends Controller
             $update['rclone_token'] = $data['rclone_token'];
         }
 
+        $tokenChanged = filled($data['rclone_token'] ?? null)
+            && trim($data['rclone_token']) !== trim((string) $server->rclone_token);
+
         if (! empty($data['ssh_password'])) {
             $update['ssh_password'] = $data['ssh_password'];
         }
 
         $server->update($update);
+
+        if ($tokenChanged) {
+            return redirect()
+                ->route('servers.show', $server)
+                ->with('success', 'Настройки сохранены.')
+                ->with('warning', 'Токен Яндекс.Диска изменён. Нажмите «Переустановить restic», чтобы применить его на сервере.');
+        }
 
         return redirect()->route('servers.show', $server)->with('success', 'Сервер обновлён');
     }
@@ -135,7 +145,7 @@ class ServerController extends Controller
         try {
             $log = $setup->setup($server);
             $message = $server->fresh()->is_setup_complete
-                ? 'restic + rclone установлены на сервере'
+                ? 'restic + rclone обновлены на сервере (токен и настройки применены)'
                 : 'Ошибка установки — см. лог';
         } catch (\Throwable $e) {
             $server->update(['setup_log' => $e->getMessage(), 'is_setup_complete' => false]);

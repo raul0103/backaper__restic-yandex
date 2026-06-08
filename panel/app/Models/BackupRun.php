@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\BackupLogParser;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -20,6 +21,12 @@ class BackupRun extends Model
     public function isRunning(): bool
     {
         return $this->status === 'running';
+    }
+
+    /** @return array<string, mixed> */
+    public function parsedLog(): array
+    {
+        return app(BackupLogParser::class)->parse($this->log);
     }
 
     protected function casts(): array

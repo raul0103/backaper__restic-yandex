@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\BackupRun;
+use App\Services\BackupLogParser;
 use App\Services\BackupOrchestrator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\View\View;
@@ -16,7 +17,7 @@ class BackupRunController extends Controller
         return view('backup-runs.show', ['run' => $backupRun]);
     }
 
-    public function status(BackupRun $backupRun, BackupOrchestrator $orchestrator): JsonResponse
+    public function status(BackupRun $backupRun, BackupOrchestrator $orchestrator, BackupLogParser $parser): JsonResponse
     {
         set_time_limit(120);
 
@@ -30,6 +31,7 @@ class BackupRunController extends Controller
             'status' => $backupRun->status,
             'running' => $backupRun->isRunning(),
             'log' => $backupRun->log,
+            'sizes' => $parser->parse($backupRun->log),
             'remote_pid' => $backupRun->remote_pid,
             'started_at' => $backupRun->started_at?->toIso8601String(),
             'finished_at' => $backupRun->finished_at?->toIso8601String(),

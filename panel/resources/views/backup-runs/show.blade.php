@@ -3,6 +3,8 @@
 @section('title', 'Бэкап #'.$run->id)
 
 @section('content')
+@php($parsed = $run->parsedLog())
+
 <div class="mb-8">
     <div class="flex flex-wrap items-center gap-3 mb-2">
         <h1 class="page-title !text-2xl">Бэкап #{{ $run->id }}</h1>
@@ -30,6 +32,10 @@
     @endif
 </div>
 
+<div id="run-sizes-wrap">
+    @include('backup-runs._sizes', ['run' => $run, 'parsed' => $parsed])
+</div>
+
 <pre id="run-log" class="log-block min-h-[240px]">{{ $run->log ?: ($run->isRunning() ? 'Ожидание лога с сервера…' : 'Лог пуст') }}</pre>
 
 <a href="{{ route('servers.show', $run->server_id) }}" class="inline-flex items-center gap-1 mt-6 text-brand-600 font-medium text-sm hover:underline no-underline">
@@ -43,7 +49,23 @@
     const logEl = document.getElementById('run-log');
     const statusEl = document.getElementById('run-status');
     const badgeEl = document.getElementById('run-badge');
+    const sizesWrap = document.getElementById('run-sizes-wrap');
+    const POLL_MS = 3000;
     let pollTimer = null;
+    let inFlight = false;
+    let stopped = false;
+
+    function schedulePoll(delay) {
+        if (stopped) return;
+        clearTimeout(pollTimer);
+        pollTimer = setTimeout(poll, delay);
+    }
+
+    function stopPolling() {
+        stopped = true;
+        clearTimeout(pollTimer);
+        pollTimer = null;
+    }
 
     function badgeClass(status) {
         if (status === 'completed') return 'badge badge-success';
@@ -51,9 +73,73 @@
         return 'badge badge-error';
     }
 
+    function renderSizes(parsed) {
+        if (!parsed || !sizesWrap) return;
+
+        const cloud = parsed.cloud || {};
+        const artifacts = parsed.artifacts || [];
+        const restic = parsed.restic;
+        const hasCloud = cloud.total || cloud.free || cloud.used;
+        const hasSizes = hasCloud || artifacts.length || restic;
+
+        if (!hasSizes && !parsed.insufficient_storage) {
+            sizesWrap.innerHTML = '';
+            return;
+        }
+
+        let html = '';
+
+        if (parsed.insufficient_storage) {
+            html += '<div class="mb-4 rounded-xl border px-4 py-3 text-sm alert-error">';
+            html += '<strong>Недостаточно места на Яндекс.Диске</strong> (ошибка 507). ';
+            html += 'Освободите место в облаке — это не RAM на сервере.';
+            if (cloud.free) {
+                html += ' Свободно: ' + cloud.free + (cloud.total ? ' из ' + cloud.total : '') + '.';
+            }
+            html += '</div>';
+        }
+
+        if (hasSizes) {
+            html += '<div id="run-sizes" class="card p-4 sm:p-6 mb-4">';
+            html += '<h2 class="section-title !text-base !mb-3">Размеры и облако</h2>';
+
+            if (hasCloud) {
+                html += '<dl class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4 text-sm">';
+                [['total', 'Всего на Диске'], ['used', 'Занято'], ['free', 'Свободно'], ['trashed', 'В корзине']].forEach(function (pair) {
+                    if (cloud[pair[0]]) {
+                        html += '<div><dt class="text-slate-400">' + pair[1] + '</dt><dd class="font-medium">' + cloud[pair[0]] + '</dd></div>';
+                    }
+                });
+                html += '</dl>';
+            }
+
+            if (artifacts.length || restic) {
+                html += '<div class="table-wrap"><table class="data-table text-sm"><thead><tr><th>Артефакт</th><th>Размер</th><th>В облаке</th></tr></thead><tbody>';
+                artifacts.forEach(function (item) {
+                    html += '<tr><td>' + (item.type === 'db' ? 'Дамп БД' : 'Tar проекта') + ' <code class="text-xs">' + item.name + '</code></td>';
+                    html += '<td class="font-mono">' + item.human + '</td><td>' + (item.uploaded ? '<span class="badge badge-success">да</span>' : '<span class="badge badge-error">нет</span>') + '</td></tr>';
+                });
+                if (restic) {
+                    html += '<tr><td>Restic (файлы сайта)</td><td class="font-mono">' + (restic.stored || restic.added || '—') + '</td><td>';
+                    if (restic.files) html += '<span class="text-slate-500 text-xs">' + restic.files.toLocaleString() + ' файлов</span>';
+                    html += '</td></tr>';
+                }
+                html += '</tbody></table></div>';
+            }
+
+            html += '</div>';
+        }
+
+        sizesWrap.innerHTML = html;
+    }
+
     function applyStatus(data) {
         if (data.log) {
             logEl.textContent = data.log;
+        }
+
+        if (data.sizes) {
+            renderSizes(data.sizes);
         }
 
         badgeEl.textContent = data.status;
@@ -81,22 +167,27 @@
     }
 
     function poll() {
+        if (inFlight || stopped) return;
+        inFlight = true;
+
         fetch(statusUrl, { headers: { 'Accept': 'application/json' } })
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 applyStatus(data);
                 if (!data.running) {
-                    clearInterval(pollTimer);
-                    pollTimer = null;
+                    stopPolling();
                 }
             })
-            .catch(function () {
-                // keep polling on transient errors
+            .catch(function () {})
+            .finally(function () {
+                inFlight = false;
+                if (!stopped) {
+                    schedulePoll(POLL_MS);
+                }
             });
     }
 
-    pollTimer = setInterval(poll, 3000);
-    poll();
+    schedulePoll(POLL_MS);
 })();
 </script>
 @endif

@@ -84,6 +84,7 @@
 
         .alert { border-radius: 12px; padding: 0.875rem 1rem; margin-bottom: 1.5rem; font-size: 0.9375rem; }
         .alert-success { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+        .alert-warning { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; }
         .alert-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
 
         .badge {
@@ -174,6 +175,9 @@
         @endif
         @if (session('error'))
             <div class="alert alert-error">{{ session('error') }}</div>
+        @endif
+        @if (session('warning'))
+            <div class="alert alert-warning">{{ session('warning') }}</div>
         @endif
 
         @yield('content')

@@ -29,6 +29,9 @@
             <code class="bg-white px-1 rounded">rclone config create yandex-check yandex config_token (Get-Content token.json -Raw)</code>,
             затем <code class="bg-white px-1 rounded">rclone about yandex-check:</code> — объём диска должен совпасть с нужным аккаунтом.
         </p>
-        <p class="text-xs text-slate-500 mb-0">Панель сохранит токен и при «Установить restic» сама передаст его на сервер по SSH. На сервер заходить не нужно. Токен — секрет, не публикуйте его.</p>
+        <p class="text-xs text-slate-500 mb-0">
+            Панель сохранит токен в БД. Чтобы бэкапы шли в новый аккаунт, после сохранения нажмите на странице сервера
+            <strong>«Переустановить restic»</strong> — токен будет залит на сервер по SSH. Токен — секрет, не публикуйте его.
+        </p>
     </div>
 </details>

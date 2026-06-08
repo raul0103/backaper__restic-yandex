@@ -17,8 +17,8 @@
     </div>
     <div class="flex flex-wrap gap-2 shrink-0">
         <a href="{{ route('servers.wizard.step1', $server) }}" class="btn btn-secondary">SSH и restic</a>
-        @if($server->readyForRemoteSetup() && !$server->is_setup_complete)
-            <form method="post" action="{{ route('servers.setup', $server) }}">@csrf<button type="submit" class="btn btn-blue">Установить restic</button></form>
+        @if($server->readyForRemoteSetup())
+            <form method="post" action="{{ route('servers.setup', $server) }}">@csrf<button type="submit" class="btn btn-blue">{{ $server->is_setup_complete ? 'Переустановить restic' : 'Установить restic' }}</button></form>
         @endif
         @if($server->readyForBackup())
             <form method="post" action="{{ route('servers.backup', $server) }}">@csrf<button type="submit" class="btn btn-primary">Бэкап всех</button></form>
@@ -44,6 +44,18 @@
     @if(empty($server->rclone_token))
         <p class="text-sm text-red-700 mt-2 mb-0">Не задан Rclone token — JSON с <code>rclone authorize "yandex"</code> вставьте на <a href="{{ route('servers.wizard.step1', $server) }}" class="underline">шаге 1</a>.</p>
     @endif
+</section>
+@endif
+
+@if($server->is_setup_complete)
+<section class="callout-amber mb-8">
+    <h2 class="font-semibold text-amber-900 mb-2">Сменили Rclone token?</h2>
+    <p class="text-sm text-amber-950 mb-0">
+        Сохраните новый JSON на
+        <a href="{{ route('servers.wizard.step1', $server) }}" class="text-brand-700 font-medium hover:underline">шаге 1</a>,
+        затем нажмите <strong>«Переустановить restic»</strong> выше — панель зальёт токен на сервер и обновит rclone.
+        Без этого бэкапы продолжат идти в <em>старый</em> аккаунт Яндекс.Диска.
+    </p>
 </section>
 @endif
 

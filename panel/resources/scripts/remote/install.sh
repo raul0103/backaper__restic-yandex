@@ -47,35 +47,33 @@ install_rclone() {
 write_rclone_config() {
   : "${BACKAPER_RCLONE_REMOTE:?BACKAPER_RCLONE_REMOTE required}"
 
-  if rclone lsd "${BACKAPER_RCLONE_REMOTE}:" >/dev/null 2>&1; then
-    log "rclone remote [${BACKAPER_RCLONE_REMOTE}] already works"
-    return
-  fi
-
   token_file="${BACKAPER_RCLONE_TOKEN_FILE:-$BACKAPER_ROOT/rclone-token.json}"
 
-  if [[ ! -f "$token_file" ]]; then
-    echo "rclone remote [${BACKAPER_RCLONE_REMOTE}] not configured." >&2
-    echo "On server run: rclone config   OR   put OAuth token in ${token_file}" >&2
-    exit 1
-  fi
-
-  token="$(tr -d '\n' < "$token_file")"
-  mkdir -p "$HOME/.config/rclone"
-  conf="$HOME/.config/rclone/rclone.conf"
-
-  if [[ -f "$conf" ]] && grep -q "^\[${BACKAPER_RCLONE_REMOTE}\]" "$conf" 2>/dev/null; then
-    log "rclone remote [${BACKAPER_RCLONE_REMOTE}] already configured"
+  if [[ -f "$token_file" ]]; then
+    token="$(tr -d '\n' < "$token_file")"
+    if rclone config show "${BACKAPER_RCLONE_REMOTE}" >/dev/null 2>&1; then
+      log "Updating rclone remote [${BACKAPER_RCLONE_REMOTE}] token..."
+      rclone config update "${BACKAPER_RCLONE_REMOTE}" token "$token" --non-interactive
+    else
+      log "Creating rclone remote [${BACKAPER_RCLONE_REMOTE}]..."
+      rclone config create "${BACKAPER_RCLONE_REMOTE}" yandex config_token "$token" --non-interactive
+    fi
+    if ! rclone lsd "${BACKAPER_RCLONE_REMOTE}:" >/dev/null 2>&1; then
+      echo "rclone remote [${BACKAPER_RCLONE_REMOTE}] unreachable — check OAuth token" >&2
+      exit 1
+    fi
+    log "rclone remote [${BACKAPER_RCLONE_REMOTE}] OK"
     return
   fi
 
-  log "Writing rclone remote [${BACKAPER_RCLONE_REMOTE}]..."
-  {
-    echo "[${BACKAPER_RCLONE_REMOTE}]"
-    echo "type = yandex"
-    echo "token = ${token}"
-  } >> "$conf"
-  chmod 600 "$conf"
+  if rclone lsd "${BACKAPER_RCLONE_REMOTE}:" >/dev/null 2>&1; then
+    log "rclone remote [${BACKAPER_RCLONE_REMOTE}] already works (no token file uploaded)"
+    return
+  fi
+
+  echo "rclone remote [${BACKAPER_RCLONE_REMOTE}] not configured." >&2
+  echo "Put OAuth token in ${token_file} and run install again." >&2
+  exit 1
 }
 
 write_backaper_env() {

@@ -15,6 +15,27 @@ trap cleanup EXIT
 
 log() { echo "[backup] $(date -Is) $*"; }
 
+file_bytes() {
+  stat -c%s "$1" 2>/dev/null || stat -f%z "$1" 2>/dev/null || echo 0
+}
+
+log_size() {
+  local type="$1"
+  local name="$2"
+  local path="$3"
+  local uploaded="${4:-no}"
+  local bytes
+  bytes="$(file_bytes "$path")"
+  log "SIZE type=${type} name=${name} bytes=${bytes} uploaded=${uploaded}"
+}
+
+log_cloud_quota() {
+  log "=== Yandex Disk (${RCLONE_REMOTE}) ==="
+  if ! rclone about "${RCLONE_REMOTE}:" 2>&1 | sed 's/^/[backup]   /'; then
+    log "WARN: could not read cloud quota (rclone about failed)"
+  fi
+}
+
 sanitize_slug() {
   echo "$1" | tr ' /:' '___' | tr -cd 'a-zA-Z0-9._-' | cut -c1-120
 }
@@ -54,6 +75,7 @@ fi
 
 project_count="$(jq '.projects | length' "$MANIFEST_FILE")"
 log "Projects: $project_count | cloud: ${RCLONE_REMOTE}:${CLOUD_PREFIX}"
+log_cloud_quota
 
 for i in $(seq 0 $((project_count - 1))); do
   name="$(jq -r ".projects[$i].name" "$MANIFEST_FILE")"
@@ -102,7 +124,9 @@ for i in $(seq 0 $((project_count - 1))); do
   "${dump_bin[@]}" "${mysql_args[@]}" \
     --single-transaction --routines --triggers "$db_name" > "$dump_sql"
   gzip -cf "$dump_sql" > "$dump_gz"
+  log_size "db" "$db_slug" "$dump_gz" "no"
   rclone copyto "$dump_gz" "${RCLONE_REMOTE}:${CLOUD_PREFIX}/databases/${db_slug}/${TIMESTAMP}.sql.gz"
+  log_size "db" "$db_slug" "$dump_gz" "yes"
   rm -f "$dump_sql" "$dump_gz"
 
   # --- restic: snapshot файлов проекта (без дампа в папке) ---
@@ -133,7 +157,9 @@ for i in $(seq 0 $((project_count - 1))); do
   base="$(basename "$root")"
   log "tar → ${RCLONE_REMOTE}:${CLOUD_PREFIX}/projects/${slug}/${TIMESTAMP}.tar.gz"
   tar -czf "$project_tar" -C "$parent" "${tar_excludes[@]}" "$base"
+  log_size "tar" "$slug" "$project_tar" "no"
   rclone copyto "$project_tar" "${RCLONE_REMOTE}:${CLOUD_PREFIX}/projects/${slug}/${TIMESTAMP}.tar.gz"
+  log_size "tar" "$slug" "$project_tar" "yes"
   rm -f "$project_tar"
 
   log "OK: ${name}"

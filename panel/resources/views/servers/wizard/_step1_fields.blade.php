@@ -25,8 +25,11 @@
     @if(!empty($server->rclone_token) && !old('rclone_token'))
         <p class="text-xs text-brand-700 mt-1">Токен уже сохранён. Вставьте новый JSON только если нужно заменить.</p>
     @endif
+    <p class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2 mb-0">
+        <strong>После смены токена</strong> откройте страницу сервера и нажмите «Переустановить restic» — иначе на сервере останется старый аккаунт Яндекс.Диска.
+    </p>
 </div>
 
 @include('servers._rclone_help')
 
-<p class="text-xs text-slate-500">После мастера на странице сервера нажмите «Установить restic» — панель сама передаст настройки по SSH.</p>
+<p class="text-xs text-slate-500">После мастера на странице сервера нажмите «Установить restic». При смене токена — «Переустановить restic».</p>
