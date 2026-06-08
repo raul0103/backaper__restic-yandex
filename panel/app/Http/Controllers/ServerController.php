@@ -74,6 +74,17 @@ class ServerController extends Controller
         return view('servers.show', compact('server'));
     }
 
+    public function restoreGuide(Server $server): View|RedirectResponse
+    {
+        if (! $server->isWizardComplete()) {
+            return redirect()->route($server->wizardRoute(), $server);
+        }
+
+        $server->load(['projects.database']);
+
+        return view('servers.restore', compact('server'));
+    }
+
     public function edit(Server $server): View|RedirectResponse
     {
         if (! $server->isWizardComplete()) {

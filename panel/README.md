@@ -35,9 +35,8 @@ php artisan serve
 
 1. **«Установить restic»** — по SSH `install.sh`: restic + rclone + `restic init`.
 2. **«Бэкап»** (когда есть проекты с путём и БД):
-   - **restic** — snapshot файлов с исключениями
+   - **restic** — snapshot файлов с исключениями (репозиторий `restic-repo/{server}` на облаке)
    - **rclone** — `backaper/{server}/databases/{db}/{дата}.sql.gz`
-   - **rclone** — `backaper/{server}/projects/{project}/{дата}.tar.gz`
 
 ### Artisan
 

@@ -11,8 +11,8 @@
             Restic: <code class="text-xs bg-brand-50 text-brand-700 px-1.5 py-0.5 rounded">{{ $server->resticRepository() }}</code>
         </p>
         <p class="text-xs text-slate-400 mt-1">
-            Дампы БД: {{ $server->cloudPrefix() }}/databases/{имя_бд}/{дата}.sql.gz ·
-            Архивы: {{ $server->cloudPrefix() }}/projects/{проект}/{дата}.tar.gz
+            Файлы: restic snapshot в {{ $server->resticRepository() }} ·
+            БД: {{ $server->cloudPrefix() }}/databases/{имя_бд}/{дата}.sql.gz
         </p>
     </div>
     <div class="flex flex-wrap gap-2 shrink-0">
@@ -22,6 +22,9 @@
         @endif
         @if($server->readyForBackup())
             <form method="post" action="{{ route('servers.backup', $server) }}">@csrf<button type="submit" class="btn btn-primary">Бэкап всех</button></form>
+        @endif
+        @if($server->is_setup_complete)
+            <a href="{{ route('servers.restore', $server) }}" class="btn btn-secondary">Восстановление</a>
         @endif
     </div>
 </div>
@@ -80,7 +83,7 @@
     </div>
 </div>
 
-@if ($server->setup_log)
+@if ($server->setup_log && !$server->is_setup_complete)
 <section class="mb-8">
     <h2 class="section-title">Лог setup</h2>
     <pre class="log-block">{{ $server->setup_log }}</pre>

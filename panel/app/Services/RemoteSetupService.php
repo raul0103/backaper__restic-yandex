@@ -37,9 +37,11 @@ class RemoteSetupService
         $command = "env {$env} bash ~/backaper/scripts/install.sh 2>&1";
         $log = $this->ssh->exec($server, $command);
 
+        $success = str_contains($log, 'SETUP_COMPLETE');
+
         $server->update([
-            'is_setup_complete' => str_contains($log, 'SETUP_COMPLETE'),
-            'setup_log' => $log,
+            'is_setup_complete' => $success,
+            'setup_log' => $success ? null : $log,
         ]);
 
         return $log;

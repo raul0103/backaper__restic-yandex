@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Backaper backup:
-#   1) restic snapshot — файлы проекта с исключениями
+#   1) restic snapshot — файлы проекта с исключениями (restic-repo на облаке)
 #   2) rclone — дамп БД в {cloud}/databases/{db_name}/{date}.sql.gz
-#   3) rclone — архив проекта в {cloud}/projects/{project}/{date}.tar.gz
 set -euo pipefail
 
 BACKAPER_ROOT="${BACKAPER_ROOT:-$HOME/backaper}"
@@ -141,26 +140,6 @@ for i in $(seq 0 $((project_count - 1))); do
     "${exclude_args[@]}" \
     --tag "project:${slug}" \
     --host "$(hostname -s 2>/dev/null || hostname)"
-
-  # --- rclone: архив проекта по дате → .../projects/{slug}/{timestamp}.tar.gz ---
-  tar_excludes=()
-  while IFS= read -r ex; do
-    [[ -z "$ex" ]] && continue
-    clean="${ex//\*\*/}"
-    clean="${clean#/}"
-    clean="${clean%/}"
-    [[ -n "$clean" ]] && tar_excludes+=(--exclude="$clean")
-  done < <(jq -r ".projects[$i].exclusions[]?" "$MANIFEST_FILE")
-
-  project_tar="${TMP_DIR}/${slug}.tar.gz"
-  parent="$(dirname "$root")"
-  base="$(basename "$root")"
-  log "tar → ${RCLONE_REMOTE}:${CLOUD_PREFIX}/projects/${slug}/${TIMESTAMP}.tar.gz"
-  tar -czf "$project_tar" -C "$parent" "${tar_excludes[@]}" "$base"
-  log_size "tar" "$slug" "$project_tar" "no"
-  rclone copyto "$project_tar" "${RCLONE_REMOTE}:${CLOUD_PREFIX}/projects/${slug}/${TIMESTAMP}.tar.gz"
-  log_size "tar" "$slug" "$project_tar" "yes"
-  rm -f "$project_tar"
 
   log "OK: ${name}"
 done
