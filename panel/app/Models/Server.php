@@ -92,7 +92,7 @@ class Server extends Model
             'config_discovery_status' => self::DISCOVERY_COMPLETED,
             'config_discovery_error' => $found > 0
                 ? null
-                : 'Конфиги MODX не найдены. Проверены пути из php-fpm/nginx, ~/web и домашняя директория.',
+                : 'config.inc.php не найдены в ~/…/public_html/core/config/. Проверьте SSH-пользователя.',
             'last_discovered_at' => now(),
             'config_discovery_pid' => null,
             'config_discovery_remote_pid' => null,

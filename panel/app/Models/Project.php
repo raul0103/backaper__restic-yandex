@@ -10,7 +10,7 @@ class Project extends Model
 {
     public const DEFAULT_EXCLUSIONS = [
         'core/cache/**',
-        'core/packages/**',
+        // 'core/packages/**',
         '**/node_modules/**',
         '**/.git/**',
     ];

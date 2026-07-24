@@ -21,10 +21,24 @@ class DatabaseExtractionService
         $extracted = 0;
         $failed = 0;
 
-        DB::transaction(function () use ($server, $configs, &$extracted, &$failed) {
+        if ($configs->isEmpty()) {
+            return compact('extracted', 'failed');
+        }
+
+        // Один SFTP на все config.inc.php — иначе N отдельных SSH-логинов
+        $paths = $configs->pluck('config_path')->all();
+        $contentsByPath = $this->ssh->readMany($server, $paths);
+
+        DB::transaction(function () use ($server, $configs, $contentsByPath, &$extracted, &$failed) {
             foreach ($configs as $config) {
+                $contents = $contentsByPath[$config->config_path] ?? null;
+                if ($contents === null || $contents === '') {
+                    $failed++;
+
+                    continue;
+                }
+
                 try {
-                    $contents = $this->ssh->read($server, $config->config_path);
                     $parsed = $this->parser->parse($config->config_path, $contents);
 
                     ProjectDatabase::query()->updateOrCreate(

@@ -36,7 +36,10 @@
         </div>
     </div>
 
-    <p class="text-sm text-slate-500 mb-4">Сначала берём пути из <strong>php-fpm</strong> (<code class="text-xs">chdir</code>), nginx/apache (<code class="text-xs">root</code>) и <code class="text-xs">~/web/*/public_html</code>, затем ищем <code class="text-xs">*/core/config/*.inc.php</code>. Запасной вариант — pruned-поиск в <code class="text-xs">$HOME</code>.</p>
+    <p class="text-sm text-slate-500 mb-4">
+        Ищем файлы <code class="text-xs">config.inc.php</code> по путям
+        <code class="text-xs">~/…/public_html/core/config/</code> (как на Beget) — быстро и синхронно по SSH.
+    </p>
 
     <div id="discovery-status" class="hidden mb-4 rounded-xl border px-4 py-3 text-sm"></div>
 
@@ -103,6 +106,7 @@
             'alert-success'
         );
         statusEl.textContent = text;
+        statusEl.style.whiteSpace = 'pre-wrap';
     }
 
     function renderConfigs(configs) {
@@ -195,7 +199,7 @@
         if (starting) return;
         starting = true;
         setRunningUi(true);
-        showStatus('running', 'Подключаемся к серверу и запускаем поиск…');
+        showStatus('running', 'Ищем config.inc.php на сервере…');
 
         fetchJson(discoverUrl, {
             method: 'POST',
@@ -207,16 +211,21 @@
         })
             .then(function (data) {
                 starting = false;
+                applyStatus(data);
+                setRunningUi(false);
 
-                if (!data.ok) {
-                    applyStatus(data);
-                    setRunningUi(false);
-                    showStatus('error', data.error || 'Не удалось запустить поиск');
+                if (!data.ok && data.error) {
+                    showStatus('error', data.error);
                     return;
                 }
 
-                showStatus('running', data.message || 'Поиск запущен');
-                startPolling();
+                if (data.message && data.status === 'completed') {
+                    if ((data.found || 0) > 0) {
+                        showStatus('ok', data.message);
+                    } else {
+                        showStatus('warn', data.message);
+                    }
+                }
             })
             .catch(function (err) {
                 starting = false;

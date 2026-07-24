@@ -7,6 +7,7 @@ use App\Models\Server;
 use App\Services\ConfigDiscoveryCanceller;
 use App\Services\ConfigDiscoveryService;
 use App\Services\DatabaseExtractionService;
+use App\Services\ModxConfigParser;
 use App\Services\SshService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -106,7 +107,7 @@ class ServerWizardController extends Controller
 
     public function discoverConfigs(Request $request, Server $server, ConfigDiscoveryService $discovery): RedirectResponse|JsonResponse
     {
-        set_time_limit(120);
+        set_time_limit(300);
 
         $server->resetStaleDiscovery();
         $server->refresh();
@@ -124,16 +125,17 @@ class ServerWizardController extends Controller
         }
 
         try {
-            $server->markDiscoveryRunning();
-            $pid = $discovery->startRemote($server);
+            $result = $discovery->discoverSync($server);
+            $server->refresh();
+            $server->load('modxConfigs');
         } catch (\Throwable $e) {
-            $server->markDiscoveryFailed($e->getMessage());
-
             $payload = [
                 'ok' => false,
                 'running' => false,
                 'status' => $server->fresh()->config_discovery_status,
                 'error' => $e->getMessage(),
+                'found' => 0,
+                'configs' => [],
             ];
 
             return $request->wantsJson()
@@ -141,18 +143,22 @@ class ServerWizardController extends Controller
                 : back()->with('error', $e->getMessage());
         }
 
-        $message = "Поиск запущен на сервере (PID {$pid})";
+        $message = $result['found'] > 0
+            ? 'Найдено конфигов: '.$result['found']
+            : 'Поиск завершён — config.inc.php не найдены';
 
         if ($request->wantsJson()) {
-            return response()->json([
+            return $this->discoveryJson($server, [
                 'ok' => true,
-                'running' => true,
-                'remote_pid' => $pid,
+                'running' => false,
                 'message' => $message,
-            ], 200, [], JSON_INVALID_UTF8_SUBSTITUTE);
+            ]);
         }
 
-        return back()->with('success', $message.'. Статус обновится автоматически.');
+        return back()->with(
+            $result['found'] > 0 ? 'success' : 'warning',
+            $message,
+        );
     }
 
     public function cancelDiscovery(Server $server, ConfigDiscoveryCanceller $canceller): JsonResponse
@@ -226,6 +232,8 @@ class ServerWizardController extends Controller
 
     public function extractDatabases(Server $server, DatabaseExtractionService $extraction): RedirectResponse
     {
+        set_time_limit(300);
+
         if ($server->modxConfigs()->count() === 0) {
             return back()->with('error', 'Нет конфигов — вернитесь на шаг 2');
         }
@@ -259,13 +267,34 @@ class ServerWizardController extends Controller
         return redirect()->route('servers.wizard.step4', $server);
     }
 
-    public function step4(Server $server): View|RedirectResponse
+    public function step4(Server $server, ModxConfigParser $parser): View|RedirectResponse
     {
         if ($redirect = $this->guardWizardStep($server, 4)) {
             return $redirect;
         }
 
         $server->load(['modxConfigs.database', 'modxConfigs.project.exclusionRules']);
+
+        // Переименовать public_html → родительская папка (domain.ru)
+        foreach ($server->modxConfigs as $config) {
+            $root = $config->suggested_root_path ?: $config->project?->root_path;
+            if (! $root) {
+                continue;
+            }
+            $better = $parser->projectNameFromRoot($root);
+            if ($better === '') {
+                continue;
+            }
+            if ($better !== $config->label) {
+                $config->update(['label' => $better]);
+                $config->label = $better;
+            }
+            if ($config->project && $config->project->name !== $better
+                && $parser->isGenericDocrootName($config->project->name)) {
+                $config->project->update(['name' => $better]);
+                $config->project->name = $better;
+            }
+        }
 
         return view('servers.wizard.step4', compact('server'));
     }

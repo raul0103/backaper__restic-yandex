@@ -10,6 +10,9 @@ use RuntimeException;
 
 class SshService
 {
+    /** @var array<int, string> */
+    private array $homeDirCache = [];
+
     public function connect(Server $server): SSH2
     {
         $ssh = new SSH2($server->host, $server->ssh_port);
@@ -45,12 +48,20 @@ class SshService
 
     public function homeDir(Server $server): string
     {
-        return $this->exec($server, 'printf %s "$HOME"');
+        if (! isset($this->homeDirCache[$server->id])) {
+            $this->homeDirCache[$server->id] = $this->exec($server, 'printf %s "$HOME"');
+        }
+
+        return $this->homeDirCache[$server->id];
     }
 
     public function upload(Server $server, string $remotePath, string $contents): void
     {
-        $remotePath = str_replace('~', $this->homeDir($server), $remotePath);
+        $remotePath = $this->expandPath($server, $remotePath);
+        // PHP на Windows может отдать CRLF — bash на Linux из‑за этого падает
+        if (str_ends_with($remotePath, '.sh') || str_ends_with($remotePath, '.env') || str_ends_with($remotePath, '.bash')) {
+            $contents = str_replace(["\r\n", "\r"], "\n", $contents);
+        }
         $sftp = $this->sftp($server);
         $dir = dirname($remotePath);
 
@@ -65,15 +76,49 @@ class SshService
 
     public function read(Server $server, string $remotePath): string
     {
-        $remotePath = str_replace('~', $this->homeDir($server), $remotePath);
-        $sftp = $this->sftp($server);
-        $contents = $sftp->get($remotePath);
+        $results = $this->readMany($server, [$remotePath]);
+        $remotePath = $this->expandPath($server, $remotePath);
 
-        if ($contents === false) {
+        if (! isset($results[$remotePath])) {
             throw new RuntimeException("Failed to read {$remotePath}");
         }
 
-        return $contents;
+        return $results[$remotePath];
+    }
+
+    /**
+     * Читает несколько файлов по одному SFTP-соединению (без повторных SSH-логинов).
+     *
+     * @param  list<string>  $remotePaths
+     * @return array<string, string> path => contents (только успешно прочитанные)
+     */
+    public function readMany(Server $server, array $remotePaths): array
+    {
+        if ($remotePaths === []) {
+            return [];
+        }
+
+        $sftp = $this->sftp($server);
+        $out = [];
+
+        foreach ($remotePaths as $remotePath) {
+            $path = $this->expandPath($server, $remotePath);
+            $contents = $sftp->get($path);
+            if ($contents !== false) {
+                $out[$path] = $contents;
+            }
+        }
+
+        return $out;
+    }
+
+    private function expandPath(Server $server, string $remotePath): string
+    {
+        if (str_contains($remotePath, '~')) {
+            return str_replace('~', $this->homeDir($server), $remotePath);
+        }
+
+        return $remotePath;
     }
 
     private function login(SSH2|SFTP $client, Server $server): void

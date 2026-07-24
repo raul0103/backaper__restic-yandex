@@ -69,7 +69,21 @@ class ModxConfigParser
     public function projectNameFromRoot(string $rootPath): string
     {
         $rootPath = rtrim(str_replace('\\', '/', $rootPath), '/');
+        $base = basename($rootPath);
 
-        return basename($rootPath) ?: 'modx-site';
+        // Beget/Hestia: .../domain.ru/public_html → имя = domain.ru
+        if ($this->isGenericDocrootName($base)) {
+            $parent = basename(dirname($rootPath));
+            if ($parent !== '' && $parent !== '/' && $parent !== '.') {
+                return $parent;
+            }
+        }
+
+        return $base !== '' ? $base : 'modx-site';
+    }
+
+    public function isGenericDocrootName(string $name): bool
+    {
+        return in_array(strtolower($name), ['public_html', 'public', 'www', 'htdocs', 'httpdocs'], true);
     }
 }

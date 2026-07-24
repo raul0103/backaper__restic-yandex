@@ -24,28 +24,15 @@ class DiscoverConfigsCommand extends Command
             return self::FAILURE;
         }
 
-        $server->markDiscoveryRunning();
-
         try {
-            $pid = $discovery->startRemote($server);
-            $this->info("Remote discovery started (PID {$pid})");
-
-            while ($server->fresh()->isDiscoveryRunning()) {
-                sleep(3);
-                $discovery->advanceDiscovery($server->fresh());
+            $result = $discovery->discoverSync($server);
+            $this->info('Найдено конфигов: '.$result['found']);
+            foreach ($result['paths'] as $path) {
+                $this->line('  '.$path);
             }
 
-            $server->refresh();
-            $this->info("Status: {$server->config_discovery_status}");
-            if ($server->config_discovery_error) {
-                $this->error($server->config_discovery_error);
-            }
-
-            return $server->config_discovery_status === Server::DISCOVERY_COMPLETED
-                ? self::SUCCESS
-                : self::FAILURE;
+            return self::SUCCESS;
         } catch (\Throwable $e) {
-            $server->markDiscoveryFailed($e->getMessage());
             $this->error($e->getMessage());
 
             return self::FAILURE;

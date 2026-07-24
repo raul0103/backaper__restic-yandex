@@ -7,7 +7,7 @@
 
 <div class="mb-8">
     <h1 class="page-title">Шаг 3 — Базы данных</h1>
-    <p class="page-subtitle">Данные подключения из найденных <code class="text-brand-600 bg-brand-50 px-1 rounded text-sm">config.inc.php</code></p>
+    <p class="page-subtitle">Читаем уже найденные <code class="text-brand-600 bg-brand-50 px-1 rounded text-sm">config.inc.php</code> одним SSH-подключением</p>
 </div>
 
 <div class="flex flex-wrap gap-3 mb-8">

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Server;
 use App\Services\BackupOrchestrator;
+use App\Services\ModxConfigParser;
 use App\Services\RemoteSetupService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -67,7 +68,7 @@ class ServerController extends Controller
             ->with('success', 'Сервер создан. Укажите Rclone token, затем установите restic.');
     }
 
-    public function show(Server $server): View|RedirectResponse
+    public function show(Server $server, ModxConfigParser $parser): View|RedirectResponse
     {
         $server->load([
             'projects.database',
@@ -75,6 +76,17 @@ class ServerController extends Controller
             'projects.exclusionRules',
             'backupRuns' => fn ($q) => $q->latest()->limit(20),
         ]);
+
+        foreach ($server->projects as $project) {
+            if (! $parser->isGenericDocrootName($project->name) || ! $project->root_path) {
+                continue;
+            }
+            $better = $parser->projectNameFromRoot($project->root_path);
+            if ($better !== '' && $better !== $project->name) {
+                $project->update(['name' => $better]);
+                $project->name = $better;
+            }
+        }
 
         return view('servers.show', compact('server'));
     }
