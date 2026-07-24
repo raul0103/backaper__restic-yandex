@@ -28,7 +28,13 @@
         <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
             <div>
                 <h2 class="section-title !mb-1">Базы данных (отдельные дампы)</h2>
-                <p class="text-sm text-slate-500">Найдите конфиги сайтов и отметьте, какие базы сохранять отдельно.</p>
+                <p class="text-sm text-slate-500">
+                    @if ($server->isVps())
+                        Ищем MODX / WordPress / Laravel в <code>/var/www</code>, <code>/home</code>, <code>/srv</code> (до 6–8 уровней).
+                    @else
+                        Ищем конфиги сайтов в домашнем каталоге хостинга.
+                    @endif
+                </p>
             </div>
             <button type="submit" formaction="{{ route('servers.wizard.discover-databases', $server) }}" class="btn btn-secondary">Найти базы</button>
         </div>

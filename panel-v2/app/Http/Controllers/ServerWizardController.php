@@ -117,11 +117,18 @@ class ServerWizardController extends Controller
     {
         try {
             $result = $discovery->discover($server);
+            $msg = "Найдено баз: {$result['found']}";
+            if (($result['scanned'] ?? 0) > 0) {
+                $msg .= " (просмотрено конфигов: {$result['scanned']}";
+                if ($result['skipped']) {
+                    $msg .= ", не разобрано: {$result['skipped']}";
+                }
+                $msg .= ')';
+            } elseif ($server->isVps()) {
+                $msg .= '. На VPS ничего не найдено — проверьте, что SSH-пользователь читает /var/www и /home (часто нужен root или www-data в группе).';
+            }
 
-            return back()->with(
-                'success',
-                "Найдено баз: {$result['found']}".($result['skipped'] ? ", пропущено: {$result['skipped']}" : '')
-            );
+            return back()->with('success', $msg);
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
         }
