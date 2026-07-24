@@ -16,14 +16,18 @@ class RemoteSetupService
 
         $installScript = file_get_contents(resource_path('scripts/remote/install.sh'));
         $backupScript = file_get_contents(resource_path('scripts/remote/backup.sh'));
+        $testHomeScript = file_get_contents(resource_path('scripts/remote/test-full-home-backup.sh'));
 
         $this->ssh->exec($server, 'mkdir -p ~/backaper/scripts ~/backaper/logs ~/backaper/tmp ~/bin');
         $this->ssh->upload($server, '~/backaper/scripts/install.sh', $installScript);
         $this->ssh->upload($server, '~/backaper/scripts/backup.sh', $backupScript);
+        if ($testHomeScript !== false) {
+            $this->ssh->upload($server, '~/backaper/scripts/test-full-home-backup.sh', $testHomeScript);
+        }
         if (! empty(trim((string) $server->rclone_token))) {
             $this->ssh->upload($server, '~/backaper/rclone-token.json', trim($server->rclone_token));
         }
-        $this->ssh->exec($server, 'chmod +x ~/backaper/scripts/install.sh ~/backaper/scripts/backup.sh');
+        $this->ssh->exec($server, 'chmod +x ~/backaper/scripts/install.sh ~/backaper/scripts/backup.sh ~/backaper/scripts/test-full-home-backup.sh');
 
         // Закрепляем slug из названия сервера (не из hostname машины)
         if ($server->restic_repo_slug === null || $server->restic_repo_slug === '') {

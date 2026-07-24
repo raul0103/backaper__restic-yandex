@@ -101,20 +101,22 @@ backup_one_tree() {
   done < <(jq -r '.exclusions[]?' "$MANIFEST_FILE")
 
   log "restic backup ${root}"
+  # limit-upload: KiB/s — спокойная отправка чанками на Яндекс (меньше шанс kill на Beget)
+  local upload_limit="${BACKAPER_UPLOAD_LIMIT_KIB:-2048}"
   set +e
   (
     while true; do
       sleep 60
-      echo "[backup] $(date -Is) … ${label}: restic ещё работает"
+      echo "[backup] $(date -Is) … ${label}: restic ещё работает (upload ≤${upload_limit} KiB/s)"
     done
   ) &
   local heartbeat_pid=$!
 
-  # Меньше RAM на shared-хостинге (Beget убивает жирные процессы без записи в лог)
-  GOMAXPROCS="${GOMAXPROCS:-1}" GOGC="${GOGC:-50}" \
+  GOMAXPROCS="${GOMAXPROCS:-1}" GOGC="${GOGC:-40}" \
   restic_run backup "$root" \
     "${exclude_args[@]}" \
     --one-file-system \
+    --limit-upload "$upload_limit" \
     --tag "path:${slug}" \
     --host "$(hostname -s 2>/dev/null || hostname)" \
     --verbose=1
@@ -144,24 +146,10 @@ for i in $(seq 0 $((path_count - 1))); do
     root="${root/#\~/$HOME}"
   fi
 
-  # Весь $HOME одним куском на Beget → OOM kill (процесс исчезает, лог обрывается).
-  # Бэкапим каждую папку верхнего уровня отдельно.
+  # Весь хостинг / указанный путь — одним снапшотом
   if [[ "$root" == "$HOME" || "$root" == "$HOME/" ]]; then
-    log "Хостинг: бэкап по папкам в ${HOME} (так не убивают по памяти)"
-    shopt -s nullglob
-    local_children=("$HOME"/*/)
-    if [[ ${#local_children[@]} -eq 0 ]]; then
-      log "WARN: в домашнем каталоге нет папок"
-      continue
-    fi
-    for child in "${local_children[@]}"; do
-      child="${child%/}"
-      name="$(basename "$child")"
-      case "$name" in
-        backaper|tmp|mail|logs|bin) log "SKIP folder: ${name}"; continue ;;
-      esac
-      backup_one_tree "$child" "$name" "$(sanitize_slug "$name")"
-    done
+    log "Хостинг: один бэкап всего аккаунта ${HOME} (restic сам режет на pack/chunks, upload throttled)"
+    backup_one_tree "$HOME" "home" "home"
   else
     [[ -z "$slug" || "$slug" =~ ^_+$ ]] && slug="$(sanitize_slug "$(basename "$root")")"
     [[ -z "$slug" || "$slug" =~ ^_+$ ]] && slug="files"

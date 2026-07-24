@@ -133,7 +133,13 @@ class BackupOrchestrator
         $backupScript = file_get_contents(resource_path('scripts/remote/backup.sh'));
         $this->ssh->exec($server, 'mkdir -p ~/backaper/scripts', 15);
         $this->ssh->upload($server, '~/backaper/scripts/backup.sh', $backupScript);
-        $this->ssh->exec($server, 'chmod +x ~/backaper/scripts/backup.sh', 15);
+        $testHome = resource_path('scripts/remote/test-full-home-backup.sh');
+        if (is_file($testHome)) {
+            $this->ssh->upload($server, '~/backaper/scripts/test-full-home-backup.sh', file_get_contents($testHome));
+            $this->ssh->exec($server, 'chmod +x ~/backaper/scripts/backup.sh ~/backaper/scripts/test-full-home-backup.sh', 15);
+        } else {
+            $this->ssh->exec($server, 'chmod +x ~/backaper/scripts/backup.sh', 15);
+        }
 
         $manifestJson = json_encode($manifest, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         if ($manifestJson === false) {
