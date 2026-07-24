@@ -171,10 +171,17 @@ class ServerController extends Controller
         }
     }
 
-    public function backup(Server $server, BackupOrchestrator $orchestrator): RedirectResponse
+    public function backup(Server $server, Request $request, BackupOrchestrator $orchestrator): RedirectResponse
     {
+        $mode = (string) $request->input('mode', 'databases');
+        $options = match ($mode) {
+            'files' => ['files' => true, 'databases' => false],
+            'all' => ['files' => true, 'databases' => true],
+            default => ['files' => false, 'databases' => true],
+        };
+
         try {
-            $run = $orchestrator->startServerBackup($server);
+            $run = $orchestrator->startServerBackup($server, $options);
 
             return redirect()->route('backup-runs.show', $run);
         } catch (\Throwable $e) {

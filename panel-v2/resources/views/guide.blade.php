@@ -58,8 +58,8 @@
     <section class="card p-6">
         <h2 class="section-title">После настройки</h2>
         <ul class="list-disc pl-5 space-y-2 text-sm text-slate-600">
-            <li>На странице сервера нажмите <strong class="text-slate-900">«Запустить бэкап»</strong>.</li>
-            <li>Дождитесь строки <code class="text-xs bg-slate-100 px-1 rounded">BACKUP_COMPLETE</code> в логе.</li>
+            <li><strong class="text-slate-900">Файлы</strong> — вручную по SSH (вкладка «Ручной запуск» → <code class="text-xs bg-slate-100 px-1 rounded">backup-files.sh</code>).</li>
+            <li><strong class="text-slate-900">Базы</strong> — кнопка «Дамп баз» в панели или CLI <code class="text-xs bg-slate-100 px-1 rounded">backup-databases.sh</code> (ищет конфиги на лету).</li>
             <li>Инструкция по восстановлению — кнопка «Восстановление» у сервера.</li>
         </ul>
     </section>

@@ -19,9 +19,10 @@
         </p>
     </div>
     <div class="flex flex-wrap gap-2">
-        @if ($server->readyForBackup())
+        @if ($server->is_setup_complete && $server->databases->where('is_enabled', true)->isNotEmpty())
             <form method="post" action="{{ route('servers.backup', $server) }}">@csrf
-                <button type="submit" class="btn btn-primary">Запустить бэкап</button>
+                <input type="hidden" name="mode" value="databases">
+                <button type="submit" class="btn btn-primary">Дамп баз</button>
             </form>
         @endif
         @if ($server->readyForRemoteSetup())
@@ -72,7 +73,7 @@
             @php($path = $server->backupPaths->first())
             <div class="font-medium">{{ $path?->displayName() ?? $server->fullBackupTarget()['label'] }}</div>
             <div class="text-xs font-mono text-slate-400 mt-1">{{ $path?->path ?? $server->fullBackupTarget()['path'] }}</div>
-            <p class="text-xs text-slate-500 mt-2">Бэкапится весь аккаунт одним снапшотом (restic режет данные на pack’и, upload с лимитом). Пути настраивать не нужно.</p>
+            <p class="text-xs text-slate-500 mt-2">Файлы бэкапятся вручную через CLI (вкладка «Ручной запуск»). Панель запускает только дампы БД.</p>
         </div>
     </section>
 
@@ -118,9 +119,8 @@
 {{-- ===== Ручной запуск ===== --}}
 <div data-server-panel="manual" class="hidden space-y-6">
     <div class="help-box">
-        Через панель бэкап раньше обрывался: SSH-сессия панели закрывалась и процесс получал SIGHUP.
-        Теперь панель запускает бэкап в <code>screen</code> (как ручной CLI) и подтягивает хвост лога с прогрессом restic.
-        Ручной запуск ниже — запасной вариант.
+        Два независимых сценария: <strong>файлы</strong> (restic) и <strong>дампы БД</strong> (mysqldump → rclone).
+        Через панель базы берутся из уже найденных доступов; через CLI скрипт сам ищет конфиги на сервере.
     </div>
 
     <section class="card p-6">
@@ -134,28 +134,41 @@
     </section>
 
     <section class="card p-6">
-        <h2 class="section-title">3. Бэкап всего хостинга (файлы)</h2>
-        <p class="text-sm text-slate-500 mb-3">Один снапшот всего домашнего каталога. Upload ограничен (~2 MiB/s).</p>
-        <pre class="code-block mb-3">screen -S backup
+        <h2 class="section-title">3. Бэкап файлов (только CLI)</h2>
+        <p class="text-sm text-slate-500 mb-3">Один снапшот всего домашнего каталога. Upload ограничен (~2 MiB/s). Базы сюда не входят.</p>
+        <pre class="code-block mb-3">screen -S backup-files
 source ~/backaper/backaper.env
-bash ~/backaper/scripts/test-full-home-backup.sh</pre>
-        <p class="text-xs text-slate-500 mb-3">Отключиться от screen не останавливая бэкап: <code>Ctrl+A</code>, затем <code>D</code>. Вернуться: <code>screen -r backup</code></p>
-        <p class="text-sm text-slate-600 mb-2">Если снова обрывает — медленнее:</p>
-        <pre class="code-block">BACKAPER_UPLOAD_LIMIT_KIB=1024 bash ~/backaper/scripts/test-full-home-backup.sh</pre>
+bash ~/backaper/scripts/backup-files.sh</pre>
+        <p class="text-xs text-slate-500 mb-3">Отключиться от screen: <code>Ctrl+A</code>, затем <code>D</code>. Вернуться: <code>screen -r backup-files</code></p>
+        <p class="text-sm text-slate-600 mb-2">Медленнее (если убивает процесс):</p>
+        <pre class="code-block">BACKAPER_UPLOAD_LIMIT_KIB=1024 bash ~/backaper/scripts/backup-files.sh</pre>
     </section>
 
     <section class="card p-6">
-        <h2 class="section-title">4. Проверка</h2>
+        <h2 class="section-title">4. Дамп баз (CLI — поиск на лету)</h2>
+        <p class="text-sm text-slate-500 mb-3">
+            Скрипт сам находит <code>config.inc.php</code> / <code>wp-config.php</code> / <code>.env</code>,
+            парсит доступы и заливает <code>.sql.gz</code> на Диск в <code>…/databases/{db}/</code>.
+            То же можно запустить кнопкой «Дамп баз» в панели (тогда берутся уже сохранённые базы).
+        </p>
+        <pre class="code-block mb-3">screen -S backup-db
+source ~/backaper/backaper.env
+bash ~/backaper/scripts/backup-databases.sh</pre>
+        <p class="text-xs text-slate-500">Нужен <code>php-cli</code> на хостинге для разбора конфигов.</p>
+    </section>
+
+    <section class="card p-6">
+        <h2 class="section-title">5. Проверка</h2>
         <pre class="code-block">source ~/backaper/backaper.env
-ps aux | grep restic | grep -v grep
+ps aux | grep -E 'restic|mysqldump|rclone' | grep -v grep
 restic snapshots --tag path:home
-restic stats latest</pre>
+rclone lsl "${BACKAPER_RCLONE_REMOTE}:${BACKAPER_CLOUD_PREFIX}/databases/" | tail -20</pre>
     </section>
 
     <section class="card p-6">
-        <h2 class="section-title">5. Если скрипта нет на сервере</h2>
-        <p class="text-sm text-slate-500 mb-3">Нажмите «Переустановить restic» выше — скрипт зальётся вместе с установкой. Или после любого бэкапа из панели.</p>
-        <pre class="code-block">ls -la ~/backaper/scripts/test-full-home-backup.sh</pre>
+        <h2 class="section-title">6. Если скриптов нет на сервере</h2>
+        <p class="text-sm text-slate-500 mb-3">Нажмите «Переустановить restic» выше — скрипты зальются вместе с установкой. Или после любого бэкапа из панели.</p>
+        <pre class="code-block">ls -la ~/backaper/scripts/backup-files.sh ~/backaper/scripts/backup-databases.sh</pre>
     </section>
 </div>
 

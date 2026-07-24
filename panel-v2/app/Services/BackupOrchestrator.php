@@ -15,10 +15,21 @@ class BackupOrchestrator
 
     public function __construct(private SshService $ssh) {}
 
-    public function startServerBackup(Server $server): BackupRun
+    /**
+     * @param  array{files?: bool, databases?: bool}  $options
+     */
+    public function startServerBackup(Server $server, array $options = []): BackupRun
     {
-        $this->assertReady($server);
-        $server->syncFullBackupPath();
+        $doFiles = $options['files'] ?? true;
+        $doDatabases = $options['databases'] ?? true;
+        if (! $doFiles && ! $doDatabases) {
+            throw new RuntimeException('Укажите режим: файлы и/или базы.');
+        }
+
+        $this->assertReady($server, $doFiles, $doDatabases);
+        if ($doFiles) {
+            $server->syncFullBackupPath();
+        }
 
         $run = BackupRun::create([
             'server_id' => $server->id,
@@ -27,7 +38,7 @@ class BackupOrchestrator
         ]);
 
         try {
-            $pid = $this->startRemote($run, $server, $this->buildManifest($server));
+            $pid = $this->startRemote($run, $server, $this->buildManifest($server, $doFiles, $doDatabases));
             $run->update(['remote_pid' => $pid]);
         } catch (\Throwable $e) {
             $run->update([
@@ -109,7 +120,7 @@ class BackupOrchestrator
         }
     }
 
-    private function assertReady(Server $server): void
+    private function assertReady(Server $server, bool $doFiles = true, bool $doDatabases = true): void
     {
         if (! $server->readyForRemoteSetup()) {
             throw new RuntimeException('Сначала укажите SSH и токен Яндекс.Диска.');
@@ -117,8 +128,14 @@ class BackupOrchestrator
         if (! $server->is_setup_complete) {
             throw new RuntimeException('Сначала установите restic на сервере (шаг 2).');
         }
-        if (! $server->readyForBackup()) {
-            throw new RuntimeException('Добавьте хотя бы один путь или базу для бэкапа.');
+        if ($doFiles && ! $server->backupPaths()->where('is_enabled', true)->exists()) {
+            $server->syncFullBackupPath();
+        }
+        if ($doFiles && ! $server->backupPaths()->where('is_enabled', true)->exists()) {
+            throw new RuntimeException('Нет пути для бэкапа файлов.');
+        }
+        if ($doDatabases && ! $server->databases()->where('is_enabled', true)->exists()) {
+            throw new RuntimeException('Нет включённых баз. Откройте «Базы данных» → «Найти базы», либо дамп через CLI (поиск на лету).');
         }
     }
 
@@ -134,6 +151,33 @@ class BackupOrchestrator
         return $this->remoteBaseCache[$run->id];
     }
 
+    /** Залить CLI/panel скрипты на сервер. */
+    private function uploadRemoteScripts(Server $server): void
+    {
+        $this->ssh->exec($server, 'mkdir -p ~/backaper/scripts', 15);
+        $files = [
+            'backup.sh',
+            'backup-files.sh',
+            'backup-databases.sh',
+            'parse-db-config.php',
+            'test-full-home-backup.sh',
+        ];
+        $chmod = [];
+        foreach ($files as $name) {
+            $local = resource_path('scripts/remote/'.$name);
+            if (! is_file($local)) {
+                continue;
+            }
+            $this->ssh->upload($server, '~/backaper/scripts/'.$name, file_get_contents($local));
+            if (str_ends_with($name, '.sh')) {
+                $chmod[] = '~/backaper/scripts/'.$name;
+            }
+        }
+        if ($chmod !== []) {
+            $this->ssh->exec($server, 'chmod +x '.implode(' ', $chmod), 15);
+        }
+    }
+
     /** @param array<string, mixed> $manifest */
     private function startRemote(BackupRun $run, Server $server, array $manifest): int
     {
@@ -144,16 +188,7 @@ class BackupOrchestrator
         $donePath = $base.'/done';
         $logPath = $base.'/run.log';
 
-        $backupScript = file_get_contents(resource_path('scripts/remote/backup.sh'));
-        $this->ssh->exec($server, 'mkdir -p ~/backaper/scripts', 15);
-        $this->ssh->upload($server, '~/backaper/scripts/backup.sh', $backupScript);
-        $testHome = resource_path('scripts/remote/test-full-home-backup.sh');
-        if (is_file($testHome)) {
-            $this->ssh->upload($server, '~/backaper/scripts/test-full-home-backup.sh', file_get_contents($testHome));
-            $this->ssh->exec($server, 'chmod +x ~/backaper/scripts/backup.sh ~/backaper/scripts/test-full-home-backup.sh', 15);
-        } else {
-            $this->ssh->exec($server, 'chmod +x ~/backaper/scripts/backup.sh', 15);
-        }
+        $this->uploadRemoteScripts($server);
 
         $manifestJson = json_encode($manifest, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         if ($manifestJson === false) {
@@ -343,34 +378,42 @@ BASH;
         return $converted !== false ? $converted : mb_scrub($value, 'UTF-8');
     }
 
-    /** @return array<string, mixed> */
-    private function buildManifest(Server $server): array
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildManifest(Server $server, bool $doFiles = true, bool $doDatabases = true): array
     {
-        $paths = $server->backupPaths()
-            ->where('is_enabled', true)
-            ->get()
-            ->map(fn (BackupPath $p) => [
-                'path' => $p->path,
-                'label' => $p->displayName(),
-                'slug' => $server->storageSlug($p->path === '~' || $p->path === '/'
-                    ? ($p->path === '/' ? 'root' : 'home')
-                    : ($p->label ?: basename(rtrim($p->path, '/')) ?: 'files')),
-            ])
-            ->values()
-            ->all();
+        $paths = [];
+        if ($doFiles) {
+            $paths = $server->backupPaths()
+                ->where('is_enabled', true)
+                ->get()
+                ->map(fn (BackupPath $p) => [
+                    'path' => $p->path,
+                    'label' => $p->displayName(),
+                    'slug' => $server->storageSlug($p->path === '~' || $p->path === '/'
+                        ? ($p->path === '/' ? 'root' : 'home')
+                        : ($p->label ?: basename(rtrim($p->path, '/')) ?: 'files')),
+                ])
+                ->values()
+                ->all();
+        }
 
-        $databases = $server->databases()
-            ->where('is_enabled', true)
-            ->get()
-            ->map(fn (DatabaseCredential $d) => [
-                'label' => $d->displayName(),
-                'host' => $d->database_server ?: 'localhost',
-                'name' => $d->database_name,
-                'user' => $d->database_user,
-                'password' => $d->database_password,
-            ])
-            ->values()
-            ->all();
+        $databases = [];
+        if ($doDatabases) {
+            $databases = $server->databases()
+                ->where('is_enabled', true)
+                ->get()
+                ->map(fn (DatabaseCredential $d) => [
+                    'label' => $d->displayName(),
+                    'host' => $d->database_server ?: 'localhost',
+                    'name' => $d->database_name,
+                    'user' => $d->database_user,
+                    'password' => $d->database_password,
+                ])
+                ->values()
+                ->all();
+        }
 
         return [
             'restic_repository' => $server->resticRepository(),
@@ -378,6 +421,8 @@ BASH;
             'rclone_remote' => $server->rclone_remote,
             'cloud_prefix' => $server->cloudPrefix(),
             'exclusions' => $server->fileExclusions(),
+            'backup_files' => $doFiles,
+            'backup_databases' => $doDatabases,
             'paths' => $paths,
             'databases' => $databases,
         ];

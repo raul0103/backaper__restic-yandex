@@ -8,17 +8,19 @@ use Illuminate\Console\Command;
 
 class BackupRemoteCommand extends Command
 {
-    protected $signature = 'backaper:backup {server? : ID сервера} {--all : Бэкап всех готовых серверов}';
+    protected $signature = 'backaper:backup {server? : ID сервера} {--all : Бэкап всех готовых серверов} {--files : Только файлы} {--databases : Только дампы БД}';
 
-    protected $description = 'По SSH: restic snapshot + rclone дампы БД и архивы проектов';
+    protected $description = 'По SSH: restic (файлы) и/или rclone дампы БД';
 
     public function handle(BackupOrchestrator $orchestrator): int
     {
+        $options = $this->modeOptions();
+
         if ($this->option('all')) {
             $servers = Server::query()->get()->filter(fn (Server $s) => $s->readyForBackup());
             foreach ($servers as $server) {
                 $this->info("Backup: {$server->name}");
-                $run = $orchestrator->startServerBackup($server);
+                $run = $orchestrator->startServerBackup($server, $options);
                 if ($run->isRunning()) {
                     $run = $orchestrator->waitForBackup($run);
                 }
@@ -33,7 +35,7 @@ class BackupRemoteCommand extends Command
             return self::FAILURE;
         }
 
-        $run = $orchestrator->startServerBackup($server);
+        $run = $orchestrator->startServerBackup($server, $options);
         if ($run->isRunning()) {
             $this->info('Backup started on server, waiting…');
             $run = $orchestrator->waitForBackup($run);
@@ -42,6 +44,21 @@ class BackupRemoteCommand extends Command
         $this->info("Status: {$run->status}");
 
         return $run->status === 'completed' ? self::SUCCESS : self::FAILURE;
+    }
+
+    /** @return array{files: bool, databases: bool} */
+    private function modeOptions(): array
+    {
+        $filesOnly = (bool) $this->option('files');
+        $dbsOnly = (bool) $this->option('databases');
+        if ($filesOnly && ! $dbsOnly) {
+            return ['files' => true, 'databases' => false];
+        }
+        if ($dbsOnly && ! $filesOnly) {
+            return ['files' => false, 'databases' => true];
+        }
+
+        return ['files' => true, 'databases' => true];
     }
 
     private function resolveServer(): ?Server

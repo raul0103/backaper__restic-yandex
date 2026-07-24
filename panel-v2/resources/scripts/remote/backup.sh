@@ -94,9 +94,11 @@ if ! command -v jq >/dev/null 2>&1; then
   export PATH="$HOME/bin:$PATH"
 fi
 
+DO_FILES="$(jq -r 'if .backup_files == false then "0" else "1" end' "$MANIFEST_FILE")"
+DO_DBS="$(jq -r 'if .backup_databases == false then "0" else "1" end' "$MANIFEST_FILE")"
 path_count="$(jq '.paths | length' "$MANIFEST_FILE")"
 db_count="$(jq '.databases | length' "$MANIFEST_FILE")"
-log "Paths: ${path_count} | Databases: ${db_count} | cloud: ${RCLONE_REMOTE}:${CLOUD_PREFIX}"
+log "mode: files=${DO_FILES} databases=${DO_DBS} | Paths: ${path_count} | Databases: ${db_count} | cloud: ${RCLONE_REMOTE}:${CLOUD_PREFIX}"
 
 log "=== Yandex Disk (${RCLONE_REMOTE}) ==="
 rclone about "${RCLONE_REMOTE}:" 2>&1 | sed 's/^/[backup]   /' || log "WARN: rclone about failed"
@@ -157,69 +159,83 @@ backup_one_tree() {
   fi
 }
 
-for i in $(seq 0 $((path_count - 1))); do
-  label="$(jq -r ".paths[$i].label // .paths[$i].path" "$MANIFEST_FILE")"
-  root="$(jq -r ".paths[$i].path" "$MANIFEST_FILE")"
-  slug="$(sanitize_slug "$(jq -r ".paths[$i].slug // .paths[$i].path" "$MANIFEST_FILE")")"
-
-  if [[ "$root" == "~" || "$root" == "~/"* ]]; then
-    root="${root/#\~/$HOME}"
+if [[ "$DO_FILES" == "1" ]]; then
+  if [[ "$path_count" -eq 0 ]]; then
+    log "WARN: backup_files=true, но paths пуст — пропуск файлов"
   fi
+  for i in $(seq 0 $((path_count - 1))); do
+    label="$(jq -r ".paths[$i].label // .paths[$i].path" "$MANIFEST_FILE")"
+    root="$(jq -r ".paths[$i].path" "$MANIFEST_FILE")"
+    slug="$(sanitize_slug "$(jq -r ".paths[$i].slug // .paths[$i].path" "$MANIFEST_FILE")")"
 
-  # Весь хостинг / указанный путь — одним снапшотом
-  if [[ "$root" == "$HOME" || "$root" == "$HOME/" ]]; then
-    log "Хостинг: один бэкап всего аккаунта ${HOME} (restic сам режет на pack/chunks, upload throttled)"
-    backup_one_tree "$HOME" "home" "home"
-  else
-    [[ -z "$slug" || "$slug" =~ ^_+$ ]] && slug="$(sanitize_slug "$(basename "$root")")"
-    [[ -z "$slug" || "$slug" =~ ^_+$ ]] && slug="files"
-    backup_one_tree "$root" "$label" "$slug"
+    if [[ "$root" == "~" || "$root" == "~/"* ]]; then
+      root="${root/#\~/$HOME}"
+    fi
+
+    # Весь хостинг / указанный путь — одним снапшотом
+    if [[ "$root" == "$HOME" || "$root" == "$HOME/" ]]; then
+      log "Хостинг: один бэкап всего аккаунта ${HOME} (restic сам режет на pack/chunks, upload throttled)"
+      backup_one_tree "$HOME" "home" "home"
+    else
+      [[ -z "$slug" || "$slug" =~ ^_+$ ]] && slug="$(sanitize_slug "$(basename "$root")")"
+      [[ -z "$slug" || "$slug" =~ ^_+$ ]] && slug="files"
+      backup_one_tree "$root" "$label" "$slug"
+    fi
+  done
+
+  log "restic forget/prune"
+  restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune || log "WARN: prune failed"
+else
+  log "Файлы пропущены (backup_files=false)"
+fi
+
+# --- 2) Отдельные дампы БД (из манифеста панели) ---
+if [[ "$DO_DBS" == "1" ]]; then
+  if [[ "$db_count" -eq 0 ]]; then
+    log "WARN: backup_databases=true, но databases пуст — пропуск дампов"
   fi
-done
+  for i in $(seq 0 $((db_count - 1))); do
+    label="$(jq -r ".databases[$i].label // .databases[$i].name" "$MANIFEST_FILE")"
+    db_host="$(jq -r ".databases[$i].host" "$MANIFEST_FILE")"
+    db_name="$(jq -r ".databases[$i].name" "$MANIFEST_FILE")"
+    db_user="$(jq -r ".databases[$i].user" "$MANIFEST_FILE")"
+    db_pass="$(jq -r ".databases[$i].password" "$MANIFEST_FILE")"
+    db_slug="$(sanitize_slug "$db_name")"
 
-# --- 2) Отдельные дампы БД ---
-for i in $(seq 0 $((db_count - 1))); do
-  label="$(jq -r ".databases[$i].label // .databases[$i].name" "$MANIFEST_FILE")"
-  db_host="$(jq -r ".databases[$i].host" "$MANIFEST_FILE")"
-  db_name="$(jq -r ".databases[$i].name" "$MANIFEST_FILE")"
-  db_user="$(jq -r ".databases[$i].user" "$MANIFEST_FILE")"
-  db_pass="$(jq -r ".databases[$i].password" "$MANIFEST_FILE")"
-  db_slug="$(sanitize_slug "$db_name")"
+    log "=== DB: ${label} (${db_name}) ==="
 
-  log "=== DB: ${label} (${db_name}) ==="
+    if command -v mariadb-dump >/dev/null 2>&1; then
+      dump_bin=(mariadb-dump)
+    else
+      dump_bin=(mysqldump)
+    fi
+    mysql_args=(-h "$db_host" -u "$db_user" --password="$db_pass" --connect-timeout=10)
 
-  if command -v mariadb-dump >/dev/null 2>&1; then
-    dump_bin=(mariadb-dump)
-  else
-    dump_bin=(mysqldump)
-  fi
-  mysql_args=(-h "$db_host" -u "$db_user" --password="$db_pass" --connect-timeout=10)
+    dump_sql="${TMP_DIR}/${db_slug}.sql"
+    dump_gz="${dump_sql}.gz"
+    log "mysqldump → ${RCLONE_REMOTE}:${CLOUD_PREFIX}/databases/${db_slug}/${TIMESTAMP}.sql.gz"
 
-  dump_sql="${TMP_DIR}/${db_slug}.sql"
-  dump_gz="${dump_sql}.gz"
-  log "mysqldump → ${RCLONE_REMOTE}:${CLOUD_PREFIX}/databases/${db_slug}/${TIMESTAMP}.sql.gz"
+    if ! run_timeout 1800 "${dump_bin[@]}" "${mysql_args[@]}" \
+      --single-transaction --routines --triggers --max-allowed-packet=512M \
+      "$db_name" > "$dump_sql" 2>/dev/null; then
+      log "ERROR: mysqldump failed for ${label} — skip"
+      rm -f "$dump_sql" "$dump_gz"
+      continue
+    fi
 
-  if ! run_timeout 1800 "${dump_bin[@]}" "${mysql_args[@]}" \
-    --single-transaction --routines --triggers --max-allowed-packet=512M \
-    "$db_name" > "$dump_sql" 2>/dev/null; then
-    log "ERROR: mysqldump failed for ${label} — skip"
+    gzip -cf "$dump_sql" > "$dump_gz"
+    log_size "db" "$db_slug" "$dump_gz" "no"
+    if ! run_timeout 1800 rclone copyto "$dump_gz" "${RCLONE_REMOTE}:${CLOUD_PREFIX}/databases/${db_slug}/${TIMESTAMP}.sql.gz"; then
+      log "ERROR: rclone upload failed for ${label} — skip"
+      rm -f "$dump_sql" "$dump_gz"
+      continue
+    fi
+    log_size "db" "$db_slug" "$dump_gz" "yes"
     rm -f "$dump_sql" "$dump_gz"
-    continue
-  fi
-
-  gzip -cf "$dump_sql" > "$dump_gz"
-  log_size "db" "$db_slug" "$dump_gz" "no"
-  if ! run_timeout 1800 rclone copyto "$dump_gz" "${RCLONE_REMOTE}:${CLOUD_PREFIX}/databases/${db_slug}/${TIMESTAMP}.sql.gz"; then
-    log "ERROR: rclone upload failed for ${label} — skip"
-    rm -f "$dump_sql" "$dump_gz"
-    continue
-  fi
-  log_size "db" "$db_slug" "$dump_gz" "yes"
-  rm -f "$dump_sql" "$dump_gz"
-  log "OK db: ${label}"
-done
-
-log "restic forget/prune"
-restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune || log "WARN: prune failed"
+    log "OK db: ${label}"
+  done
+else
+  log "Базы пропущены (backup_databases=false)"
+fi
 
 log "BACKUP_COMPLETE"
