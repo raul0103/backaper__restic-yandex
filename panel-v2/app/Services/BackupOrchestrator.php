@@ -66,7 +66,7 @@ class BackupOrchestrator
                 return;
             }
 
-            $log = $this->readRemoteLog($run, $run->server);
+            $log = $this->readRemoteLog($run, $run->server, full: true);
 
             if ($state === 'failed') {
                 $run->update([
@@ -86,12 +86,26 @@ class BackupOrchestrator
                 'remote_pid' => null,
             ]);
         } catch (\Throwable $e) {
-            $run->update([
-                'status' => 'failed',
-                'log' => trim(($run->log ?? '')."\n".$e->getMessage()),
-                'finished_at' => now(),
-                'remote_pid' => null,
-            ]);
+            // Обрыв SSH при опросе ≠ смерть бэкапа. CLI в screen живёт, панель не должна ставить failed.
+            try {
+                $this->syncRunningLog($run, $run->server);
+            } catch (\Throwable) {
+            }
+            $note = '[panel] SSH poll error (бэкап на сервере мог продолжаться): '.$e->getMessage();
+            $prev = (string) ($run->fresh()->log ?? '');
+            if (! str_contains($prev, $note)) {
+                $run->update(['log' => trim($prev."\n".$note)]);
+            }
+        }
+    }
+
+    /** Публичный peek лога для UI (даже если DB ещё пустая). */
+    public function peekLog(BackupRun $run): string
+    {
+        try {
+            return $this->readRemoteLog($run, $run->server, full: false);
+        } catch (\Throwable) {
+            return '';
         }
     }
 
@@ -149,35 +163,57 @@ class BackupOrchestrator
         $this->ssh->upload($server, $manifestPath, $manifestJson);
 
         $marker = 'backaper-backup-'.$run->id;
+        $session = 'bp'.$run->id;
         $runScript = <<<BASH
 #!/bin/bash
 # {$marker}
+trap '' HUP
+echo \$\$ > "{$pidPath}"
 export BACKAPER_MANIFEST="{$manifestPath}"
+export BACKAPER_RUN_LOG="{$logPath}"
+printf '%s\n' "[panel] runner start pid=\$\$ log={$logPath}" >> "{$logPath}"
 set +e
-bash ~/backaper/scripts/backup.sh
+if command -v stdbuf >/dev/null 2>&1; then
+  stdbuf -oL -eL bash ~/backaper/scripts/backup.sh
+else
+  bash ~/backaper/scripts/backup.sh
+fi
 ec=\$?
+printf '%s\n' "[panel] runner exit=\$ec" >> "{$logPath}"
 echo "\$ec" > "{$donePath}"
 exit "\$ec"
 BASH;
 
         $this->ssh->upload($server, $runScriptPath, $runScript);
 
+        // screen -dm переживает обрыв SSH панели (как ручной CLI). Fallback: nohup+setsid.
         $start = <<<BASH
 base={$base}
 mkdir -p "\$base"
 rm -f "{$donePath}" "{$pidPath}" "{$logPath}"
 chmod +x "{$runScriptPath}"
-if command -v stdbuf >/dev/null 2>&1; then
-  setsid stdbuf -oL -eL bash "{$runScriptPath}" > "{$logPath}" 2>&1 < /dev/null &
+printf '%s\n' "[panel] starting screen session {$session} at \$(date -Is)" > "{$logPath}"
+session="{$session}"
+if command -v screen >/dev/null 2>&1; then
+  screen -S "\$session" -X quit >/dev/null 2>&1 || true
+  screen -dmS "\$session" bash -c 'trap "" HUP; exec bash "{$runScriptPath}" >> "{$logPath}" 2>&1 < /dev/null'
+  printf '%s\n' "[panel] screen -dmS \$session (check: screen -ls)" >> "{$logPath}"
 else
-  setsid bash "{$runScriptPath}" > "{$logPath}" 2>&1 < /dev/null &
+  nohup bash -c 'trap "" HUP; setsid bash "{$runScriptPath}" >> "{$logPath}" 2>&1 < /dev/null &' >/dev/null 2>&1
+  printf '%s\n' "[panel] started via nohup/setsid (no screen)" >> "{$logPath}"
 fi
-echo \$! > "{$pidPath}"
-sleep 1
-cat "{$pidPath}"
+for i in 1 2 3 4 5 6 7 8 9 10; do
+  [ -f "{$pidPath}" ] && break
+  sleep 0.5
+done
+if [ -f "{$pidPath}" ]; then
+  cat "{$pidPath}"
+else
+  pgrep -f "{$marker}" | head -1 || echo 0
+fi
 BASH;
 
-        $output = trim($this->ssh->exec($server, $start, 30));
+        $output = trim($this->ssh->exec($server, $start, 60));
         $lines = array_values(array_filter(array_map('trim', explode("\n", $output))));
         $pid = (int) ($lines[array_key_last($lines)] ?? 0);
 
@@ -206,6 +242,7 @@ BASH;
         $donePath = $base.'/done';
         $logPath = $base.'/run.log';
         $marker = 'backaper-backup-'.$run->id;
+        $session = 'bp'.$run->id;
 
         $check = <<<BASH
 if [ -f "{$donePath}" ]; then
@@ -215,6 +252,10 @@ if [ -f "{$donePath}" ]; then
   else
     echo FAILED
   fi
+  exit 0
+fi
+if command -v screen >/dev/null 2>&1 && screen -ls 2>/dev/null | grep -q "\.{$session}"; then
+  echo RUNNING
   exit 0
 fi
 if [ -f "{$pidPath}" ]; then
@@ -228,10 +269,10 @@ if pgrep -f "{$marker}" >/dev/null 2>&1; then
   echo RUNNING
   exit 0
 fi
-if pgrep -x restic >/dev/null 2>&1 || pgrep -x rclone >/dev/null 2>&1; then
+if pgrep -x restic >/dev/null 2>&1 || pgrep -f 'rclone serve restic' >/dev/null 2>&1; then
   if [ -f "{$logPath}" ]; then
     age=\$(( \$(date +%s) - \$(stat -c %Y "{$logPath}" 2>/dev/null || echo 0) ))
-    if [ "\$age" -lt 600 ]; then
+    if [ "\$age" -lt 900 ]; then
       echo RUNNING
       exit 0
     fi
@@ -239,7 +280,7 @@ if pgrep -x restic >/dev/null 2>&1 || pgrep -x rclone >/dev/null 2>&1; then
 fi
 if [ -f "{$logPath}" ]; then
   age=\$(( \$(date +%s) - \$(stat -c %Y "{$logPath}" 2>/dev/null || echo 0) ))
-  if [ "\$age" -lt 180 ]; then
+  if [ "\$age" -lt 300 ]; then
     echo RUNNING
     exit 0
   fi
@@ -247,7 +288,7 @@ fi
 echo FAILED
 BASH;
 
-        $state = trim($this->ssh->exec($server, $check, 30));
+        $state = trim($this->ssh->exec($server, $check, 45));
 
         return match ($state) {
             'RUNNING' => 'running',
@@ -259,7 +300,7 @@ BASH;
     private function syncRunningLog(BackupRun $run, Server $server): void
     {
         try {
-            $log = $this->readRemoteLog($run, $server);
+            $log = $this->readRemoteLog($run, $server, full: false);
             if ($log !== '' && $log !== ($run->log ?? '')) {
                 $run->update(['log' => $log]);
             }
@@ -267,10 +308,21 @@ BASH;
         }
     }
 
-    private function readRemoteLog(BackupRun $run, Server $server): string
+    private function readRemoteLog(BackupRun $run, Server $server, bool $full = false): string
     {
+        $logPath = $this->remoteBaseDir($run, $server).'/run.log';
         try {
-            $log = trim($this->ssh->read($server, $this->remoteBaseDir($run, $server).'/run.log'));
+            if ($full) {
+                $log = trim($this->ssh->read($server, $logPath));
+            } else {
+                // Не escapeshellarg(): панель на Windows ломает кавычки для remote Linux
+                $quoted = "'".str_replace("'", "'\\''", $logPath)."'";
+                $log = trim($this->ssh->exec(
+                    $server,
+                    'tail -c 120000 '.$quoted.' 2>/dev/null || true',
+                    30
+                ));
+            }
 
             return $this->toUtf8($log) ?? '';
         } catch (\Throwable) {

@@ -35,7 +35,7 @@
     @include('backup-runs._sizes', ['run' => $run, 'parsed' => $parsed])
 </div>
 
-<pre id="run-log" class="log-block min-h-[240px]">{{ $run->log ?: ($run->isRunning() ? 'Ожидание лога с сервера…' : 'Лог пуст') }}</pre>
+<pre id="run-log" class="log-block min-h-[320px] max-h-[70vh] overflow-y-auto">{{ $run->log ?: ($run->isRunning() ? 'Ожидание лога с сервера…' : 'Лог пуст') }}</pre>
 
 <a href="{{ route('servers.show', $run->server_id) }}" class="inline-flex items-center gap-1 mt-6 text-brand-600 font-medium text-sm hover:underline no-underline">
     ← К серверу
@@ -49,7 +49,7 @@
     const statusEl = document.getElementById('run-status');
     const badgeEl = document.getElementById('run-badge');
     const sizesWrap = document.getElementById('run-sizes-wrap');
-    const POLL_MS = 3000;
+    const POLL_MS = 4000;
     let pollTimer = null;
     let inFlight = false;
     let stopped = false;
@@ -133,8 +133,12 @@
     }
 
     function applyStatus(data) {
-        if (data.log) {
+        if (data.log !== undefined && data.log !== null) {
+            const nearBottom = (logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight) < 120;
             logEl.textContent = data.log;
+            if (nearBottom || data.running) {
+                logEl.scrollTop = logEl.scrollHeight;
+            }
         }
 
         if (data.sizes) {
@@ -147,8 +151,9 @@
         if (data.running) {
             statusEl.classList.remove('hidden');
             statusEl.className = 'mb-4 rounded-xl border px-4 py-3 text-sm bg-blue-50 border-blue-200 text-blue-800';
-            statusEl.textContent = 'Идёт бэкап на сервере…'
-                + (data.remote_pid ? ' · PID ' + data.remote_pid : '');
+            statusEl.textContent = 'Идёт бэкап на сервере (screen)…'
+                + (data.remote_pid ? ' · PID ' + data.remote_pid : '')
+                + ' · лог обновляется каждые несколько секунд';
             return;
         }
 

@@ -12,15 +12,35 @@ mkdir -p "$TMP_DIR"
 cleanup() { rm -f "$MANIFEST_FILE"; rm -rf "$TMP_DIR"; }
 trap cleanup EXIT
 
-log() { echo "[backup] $(date -Is) $*"; }
+log() {
+  local msg="[backup] $(date -Is) $*"
+  # В файл — сразу (панель читает run.log; stdout в screen часто буферизуется)
+  if [[ -n "${BACKAPER_RUN_LOG:-}" ]]; then
+    printf '%s\n' "$msg" >> "$BACKAPER_RUN_LOG" || true
+  fi
+  printf '%s\n' "$msg"
+}
 
-# Построчный вывод в лог (иначе при redirect в файл restic «молчит» часами)
+# Построчный вывод restic в run.log (прогресс с \r тоже фиксируем как строки)
 restic_run() {
+  local line ec
+  set +e
   if command -v stdbuf >/dev/null 2>&1; then
-    stdbuf -oL -eL restic "$@"
+    stdbuf -oL -eL restic "$@" 2>&1 | while IFS= read -r line || [[ -n "$line" ]]; do
+      line="${line//$'\r'/}"
+      [[ -z "$line" ]] && continue
+      if [[ -n "${BACKAPER_RUN_LOG:-}" ]]; then
+        printf '%s\n' "$line" >> "$BACKAPER_RUN_LOG" || true
+      fi
+      printf '%s\n' "$line"
+    done
+    ec=${PIPESTATUS[0]}
   else
     restic "$@"
+    ec=$?
   fi
+  set -e
+  return "$ec"
 }
 
 file_bytes() {

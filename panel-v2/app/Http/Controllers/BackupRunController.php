@@ -26,12 +26,24 @@ class BackupRunController extends Controller
         }
 
         $backupRun->refresh();
+        $log = (string) ($backupRun->log ?? '');
+        if ($backupRun->isRunning() && trim($log) === '') {
+            $peek = $orchestrator->peekLog($backupRun);
+            if ($peek !== '') {
+                $log = $peek;
+                $backupRun->update(['log' => $peek]);
+            } else {
+                $log = "Ожидание строк в run.log на сервере…\n"
+                    ."PID: ".($backupRun->remote_pid ?: '—')."\n"
+                    ."Проверьте: tail -f ~/.backaper/backup-{$backupRun->id}/run.log";
+            }
+        }
 
         return response()->json([
             'status' => $backupRun->status,
             'running' => $backupRun->isRunning(),
-            'log' => $backupRun->log,
-            'sizes' => $parser->parse($backupRun->log),
+            'log' => $log,
+            'sizes' => $parser->parse($log),
             'remote_pid' => $backupRun->remote_pid,
             'started_at' => $backupRun->started_at?->toIso8601String(),
             'finished_at' => $backupRun->finished_at?->toIso8601String(),
