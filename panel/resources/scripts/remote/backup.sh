@@ -107,24 +107,51 @@ for i in $(seq 0 $((project_count - 1))); do
     dump_bin=(mysqldump)
   fi
   # MariaDB 11+ ignores MYSQL_PWD for mysqldump; pass credentials explicitly.
-  mysql_args=(-h "$db_host" -u "$db_user" --password="$db_pass")
+  # --connect-timeout: иначе на «плохой» БД mysql может висеть минутами.
+  mysql_args=(-h "$db_host" -u "$db_user" --password="$db_pass" --connect-timeout=10)
+
+  run_timeout() {
+    local secs="$1"
+    shift
+    if command -v timeout >/dev/null 2>&1; then
+      timeout "$secs" "$@"
+    else
+      "$@"
+    fi
+  }
 
   mysql_exec() {
     "${mysql_bin[@]}" "${mysql_args[@]}" "$db_name" -N -e "$1"
   }
 
-  log "TRUNCATE ${session_table}"
-  mysql_exec "TRUNCATE TABLE \`${session_table}\`;" 2>/dev/null || log "WARN: session truncate failed"
+  # TRUNCATE на modx_session часто ждёт lock — не блокируем весь бэкап
+  log "TRUNCATE ${session_table} (max 20s)"
+  if ! run_timeout 20 "${mysql_bin[@]}" "${mysql_args[@]}" "$db_name" -e \
+    "SET SESSION lock_wait_timeout=5; SET SESSION innodb_lock_wait_timeout=5; TRUNCATE TABLE \`${session_table}\`;" \
+    >/dev/null 2>&1; then
+    log "WARN: session truncate skipped (timeout/lock/error)"
+  else
+    log "TRUNCATE ${session_table}: ok"
+  fi
 
-  # --- DB dump → rclone: .../databases/{db}/{timestamp}.sql.gz ---
+  # --- DB dump → rclone: .../databases/{db_name}/{timestamp}.sql.gz ---
   dump_sql="${TMP_DIR}/${db_slug}.sql"
   dump_gz="${dump_sql}.gz"
   log "mysqldump → ${RCLONE_REMOTE}:${CLOUD_PREFIX}/databases/${db_slug}/${TIMESTAMP}.sql.gz"
-  "${dump_bin[@]}" "${mysql_args[@]}" \
-    --single-transaction --routines --triggers "$db_name" > "$dump_sql"
+  if ! run_timeout 1800 "${dump_bin[@]}" "${mysql_args[@]}" \
+    --single-transaction --routines --triggers --max-allowed-packet=512M \
+    "$db_name" > "$dump_sql"; then
+    log "ERROR: mysqldump failed for ${name} — skip project"
+    rm -f "$dump_sql" "$dump_gz"
+    continue
+  fi
   gzip -cf "$dump_sql" > "$dump_gz"
   log_size "db" "$db_slug" "$dump_gz" "no"
-  rclone copyto "$dump_gz" "${RCLONE_REMOTE}:${CLOUD_PREFIX}/databases/${db_slug}/${TIMESTAMP}.sql.gz"
+  if ! run_timeout 1800 rclone copyto "$dump_gz" "${RCLONE_REMOTE}:${CLOUD_PREFIX}/databases/${db_slug}/${TIMESTAMP}.sql.gz"; then
+    log "ERROR: rclone upload failed for ${name} — skip project"
+    rm -f "$dump_sql" "$dump_gz"
+    continue
+  fi
   log_size "db" "$db_slug" "$dump_gz" "yes"
   rm -f "$dump_sql" "$dump_gz"
 
@@ -136,10 +163,13 @@ for i in $(seq 0 $((project_count - 1))); do
   done < <(jq -r ".projects[$i].exclusions[]?" "$MANIFEST_FILE")
 
   log "restic backup ${root}"
-  restic backup "$root" \
+  if ! restic backup "$root" \
     "${exclude_args[@]}" \
     --tag "project:${slug}" \
-    --host "$(hostname -s 2>/dev/null || hostname)"
+    --host "$(hostname -s 2>/dev/null || hostname)"; then
+    log "ERROR: restic failed for ${name} — continue"
+    continue
+  fi
 
   log "OK: ${name}"
 done
