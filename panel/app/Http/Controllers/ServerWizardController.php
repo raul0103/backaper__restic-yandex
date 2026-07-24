@@ -33,7 +33,7 @@ class ServerWizardController extends Controller
             'ssh_port' => ['required', 'integer', 'min:1', 'max:65535'],
             'ssh_user' => ['required', 'string', 'max:255'],
             'ssh_password' => ['nullable', 'string'],
-            'restic_password' => ['required', 'string', 'min:8'],
+            'restic_repo_slug' => ['nullable', 'string', 'max:120', 'regex:/^[A-Za-z0-9._-]+$/'],
             'rclone_remote' => ['nullable', 'string', 'max:64'],
             'rclone_token' => ['nullable', 'string'],
         ]);
@@ -43,9 +43,13 @@ class ServerWizardController extends Controller
             'host' => $data['host'],
             'ssh_port' => $data['ssh_port'],
             'ssh_user' => $data['ssh_user'],
-            'restic_password' => $data['restic_password'],
+            'restic_password' => Server::DEFAULT_RESTIC_PASSWORD,
             'rclone_remote' => $data['rclone_remote'] ?: 'yandex',
         ];
+
+        if (filled($data['restic_repo_slug'] ?? null)) {
+            $update['restic_repo_slug'] = $data['restic_repo_slug'];
+        }
 
         if (filled($data['rclone_token'] ?? null)) {
             $update['rclone_token'] = $data['rclone_token'];

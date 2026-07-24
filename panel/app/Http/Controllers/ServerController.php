@@ -33,7 +33,7 @@ class ServerController extends Controller
             'ssh_port' => ['required', 'integer', 'min:1', 'max:65535'],
             'ssh_user' => ['required', 'string', 'max:255'],
             'ssh_password' => ['required', 'string'],
-            'restic_password' => ['required', 'string', 'min:8'],
+            'restic_repo_slug' => ['nullable', 'string', 'max:120', 'regex:/^[A-Za-z0-9._-]+$/'],
             'rclone_remote' => ['nullable', 'string', 'max:64'],
             'rclone_token' => ['nullable', 'string'],
         ]);
@@ -47,7 +47,8 @@ class ServerController extends Controller
             'ssh_password' => $data['ssh_password'],
             'ssh_private_key' => '',
             'ssh_public_key' => null,
-            'restic_password' => $data['restic_password'],
+            'restic_password' => Server::DEFAULT_RESTIC_PASSWORD,
+            'restic_repo_slug' => $data['restic_repo_slug'] ?: null,
             'rclone_remote' => $data['rclone_remote'] ?: 'yandex',
             'rclone_token' => $data['rclone_token'] ?? null,
             'setup_step' => Server::STEP_SETTINGS,
@@ -102,7 +103,7 @@ class ServerController extends Controller
             'ssh_port' => ['required', 'integer', 'min:1', 'max:65535'],
             'ssh_user' => ['required', 'string', 'max:255'],
             'ssh_password' => ['nullable', 'string'],
-            'restic_password' => ['required', 'string', 'min:8'],
+            'restic_repo_slug' => ['nullable', 'string', 'max:120', 'regex:/^[A-Za-z0-9._-]+$/'],
             'rclone_remote' => ['nullable', 'string', 'max:64'],
             'rclone_token' => ['nullable', 'string'],
         ]);
@@ -113,9 +114,13 @@ class ServerController extends Controller
             'ssh_port' => $data['ssh_port'],
             'ssh_user' => $data['ssh_user'],
             'ssh_auth_type' => Server::AUTH_PASSWORD,
-            'restic_password' => $data['restic_password'],
+            'restic_password' => Server::DEFAULT_RESTIC_PASSWORD,
             'rclone_remote' => $data['rclone_remote'] ?: 'yandex',
         ];
+
+        if (filled($data['restic_repo_slug'] ?? null)) {
+            $update['restic_repo_slug'] = $data['restic_repo_slug'];
+        }
 
         if (filled($data['rclone_token'] ?? null)) {
             $update['rclone_token'] = $data['rclone_token'];
@@ -149,8 +154,12 @@ class ServerController extends Controller
 
     public function setup(Server $server, RemoteSetupService $setup): RedirectResponse
     {
+        if ($server->restic_password !== Server::DEFAULT_RESTIC_PASSWORD) {
+            $server->update(['restic_password' => Server::DEFAULT_RESTIC_PASSWORD]);
+        }
+
         if (! $server->readyForRemoteSetup()) {
-            return back()->with('error', 'Укажите RESTIC_PASSWORD и Rclone token на шаге 1 мастера.');
+            return back()->with('error', 'Укажите Rclone token на шаге 1 мастера. Пароль restic: '.Server::DEFAULT_RESTIC_PASSWORD);
         }
 
         try {

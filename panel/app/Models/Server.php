@@ -18,6 +18,9 @@ class Server extends Model
 
     public const STEP_COMPLETE = 5;
 
+    /** Единый пароль шифрования restic для всех серверов/проектов. */
+    public const DEFAULT_RESTIC_PASSWORD = 'backaper$$';
+
     protected $fillable = [
         'name',
         'host',

@@ -41,7 +41,12 @@
 
         <div>
             <label class="label">RESTIC_PASSWORD</label>
-            <input name="restic_password" type="password" value="{{ old('restic_password', $server->restic_password) }}" required class="input">
+            <input type="text" value="{{ \App\Models\Server::DEFAULT_RESTIC_PASSWORD }}" readonly
+                   class="input font-mono bg-slate-50">
+            <p class="text-xs text-slate-500 mt-1.5 mb-0">
+                Один пароль для всех серверов и проектов:
+                <code class="font-mono">{{ \App\Models\Server::DEFAULT_RESTIC_PASSWORD }}</code>
+            </p>
         </div>
 
         <div>

@@ -36,13 +36,14 @@
         <li>
             Откройте
             <a href="{{ route('servers.wizard.step1', $server) }}" class="text-brand-700 font-medium hover:underline">шаг 1 — SSH и облако</a>:
-            <strong>RESTIC_PASSWORD</strong>, <strong>Rclone token</strong> (JSON), remote <code>yandex</code> → <strong>Сохранить</strong>.
+            <strong>Rclone token</strong> (JSON), remote <code>yandex</code> → <strong>Сохранить</strong>.
+            Пароль restic всегда <code class="font-mono">{{ \App\Models\Server::DEFAULT_RESTIC_PASSWORD }}</code>.
         </li>
         <li>На этой странице нажмите <strong>«Установить restic»</strong> — панель по SSH поставит restic/rclone и создаст репозиторий.</li>
         <li>После статуса <strong>«Готов»</strong> — кнопка <strong>«Бэкап всех»</strong>.</li>
     </ol>
     @if(empty($server->restic_password))
-        <p class="text-sm text-red-700 mt-3 mb-0">Не задан RESTIC_PASSWORD — заполните на <a href="{{ route('servers.wizard.step1', $server) }}" class="underline">шаге 1</a>.</p>
+        <p class="text-sm text-red-700 mt-3 mb-0">Не задан RESTIC_PASSWORD — сохраните <a href="{{ route('servers.wizard.step1', $server) }}" class="underline">шаг 1</a> ещё раз.</p>
     @endif
     @if(empty($server->rclone_token))
         <p class="text-sm text-red-700 mt-2 mb-0">Не задан Rclone token — JSON с <code>rclone authorize "yandex"</code> вставьте на <a href="{{ route('servers.wizard.step1', $server) }}" class="underline">шаге 1</a>.</p>

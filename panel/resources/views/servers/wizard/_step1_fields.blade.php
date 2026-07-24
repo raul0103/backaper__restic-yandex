@@ -1,11 +1,24 @@
 <div>
     <label class="label">RESTIC_PASSWORD</label>
-    <input name="restic_password" type="password"
-           value="{{ old('restic_password', $server->restic_password ?? '') }}"
-           required minlength="8"
-           class="input @error('restic_password') input-error @enderror">
-    @error('restic_password')<p class="text-red-600 text-sm mt-1">{{ $message }}</p>@enderror
-    <p class="text-xs text-slate-400 mt-1">Пароль шифрования restic — придумайте и сохраните.</p>
+    <input type="text" value="{{ \App\Models\Server::DEFAULT_RESTIC_PASSWORD }}" readonly
+           class="input font-mono bg-slate-50">
+    <p class="text-xs text-slate-500 mt-1.5 mb-0">
+        Один пароль шифрования для всех серверов и проектов:
+        <code class="font-mono">{{ \App\Models\Server::DEFAULT_RESTIC_PASSWORD }}</code>
+    </p>
+</div>
+
+<div>
+    <label class="label">Slug репозитория (облако)</label>
+    <input name="restic_repo_slug"
+           value="{{ old('restic_repo_slug', $server->restic_repo_slug ?? $server->repoSlug()) }}"
+           class="input font-mono text-sm"
+           pattern="[A-Za-z0-9._\-]+"
+           title="Латиница, цифры, точка, дефис, подчёркивание">
+    <p class="text-xs text-slate-500 mt-1.5 mb-0">
+        Путь в облаке: <code>restic-repo/SLUG</code> и <code>backaper/SLUG</code>.
+        При переносе на новый сервер укажите <strong>тот же</strong> slug, иначе создастся пустой репозиторий.
+    </p>
 </div>
 
 <div>
