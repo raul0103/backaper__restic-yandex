@@ -1,5 +1,5 @@
 <details class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-    <summary class="cursor-pointer font-medium text-slate-900">Как получить Rclone OAuth token (один раз на Яндекс.Диск)</summary>
+    <summary class="cursor-pointer font-medium text-slate-900">Как получить токен Яндекс.Диска</summary>
     <div class="mt-3 space-y-3">
         <p>Токен получают <strong>на вашем компьютере</strong> (не на сервере с сайтами). Нужен установленный <a href="https://rclone.org/downloads/" class="text-brand-700 underline" target="_blank" rel="noopener">rclone</a>.</p>
         <ol class="list-decimal list-inside space-y-2">

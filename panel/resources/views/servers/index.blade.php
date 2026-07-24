@@ -21,14 +21,17 @@
             <div class="flex flex-wrap gap-4 justify-between items-start">
                 <div class="min-w-0 flex-1">
                     <div class="flex flex-wrap items-center gap-2 mb-1">
-                        <a href="{{ $server->isWizardComplete() ? route('servers.show', $server) : route($server->wizardRoute(), $server) }}"
+                        <a href="{{ route('servers.show', $server) }}"
                            class="text-lg font-semibold text-slate-900 hover:text-brand-600 no-underline">{{ $server->name }}</a>
                         @if(!$server->isWizardComplete())
                             <span class="badge badge-info">мастер {{ min(4, $server->setup_step) }}/4</span>
-                        @elseif($server->is_setup_complete)
+                        @endif
+                        @if($server->is_setup_complete)
                             <span class="badge badge-success">restic OK</span>
                         @elseif($server->readyForRemoteSetup())
                             <span class="badge badge-warning">нужна установка</span>
+                        @elseif(empty($server->rclone_token))
+                            <span class="badge badge-warning">нет rclone token</span>
                         @endif
                     </div>
                     <p class="text-sm text-slate-500">{{ $server->ssh_user }}@{{ $server->host }}:{{ $server->ssh_port }}</p>
@@ -51,7 +54,7 @@
                             @csrf
                             <button type="submit" class="btn btn-primary !text-sm">Бэкап</button>
                         </form>
-                    @elseif($server->isWizardComplete() && $server->is_setup_complete)
+                    @elseif($server->is_setup_complete)
                         <span class="text-xs text-slate-400 self-center">нет проектов для бэкапа</span>
                     @endif
                 </div>

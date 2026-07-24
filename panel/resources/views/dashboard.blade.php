@@ -15,17 +15,22 @@
     <section>
         <h2 class="section-title">Серверы</h2>
         @forelse ($servers as $server)
-            <a href="{{ $server->isWizardComplete() ? route('servers.show', $server) : route($server->wizardRoute(), $server) }}"
+            <a href="{{ route('servers.show', $server) }}"
                class="card card-hover block mb-3 p-4 no-underline text-inherit">
                 <div class="flex justify-between items-start gap-2">
                     <span class="font-semibold text-slate-900">{{ $server->name }}</span>
-                    @if(!$server->isWizardComplete())
-                        <span class="badge badge-info">шаг {{ min(4, $server->setup_step) }}/4</span>
-                    @elseif($server->is_setup_complete)
-                        <span class="badge badge-success">настроен</span>
-                    @else
-                        <span class="badge badge-warning">не настроен</span>
-                    @endif
+                    <div class="flex flex-wrap gap-1 justify-end">
+                        @if(!$server->isWizardComplete())
+                            <span class="badge badge-info">мастер</span>
+                        @endif
+                        @if($server->is_setup_complete)
+                            <span class="badge badge-success">restic OK</span>
+                        @elseif($server->readyForRemoteSetup())
+                            <span class="badge badge-warning">установить restic</span>
+                        @else
+                            <span class="badge badge-warning">нет token</span>
+                        @endif
+                    </div>
                 </div>
                 <div class="text-sm text-slate-500 mt-1.5">{{ $server->ssh_user }}@{{ $server->host }} · {{ $server->projects_count }} проект(ов)</div>
             </a>

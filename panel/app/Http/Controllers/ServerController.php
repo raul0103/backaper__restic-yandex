@@ -33,6 +33,7 @@ class ServerController extends Controller
             'ssh_port' => ['required', 'integer', 'min:1', 'max:65535'],
             'ssh_user' => ['required', 'string', 'max:255'],
             'ssh_password' => ['required', 'string'],
+            'restic_password' => ['required', 'string', 'min:8'],
             'restic_repo_slug' => ['nullable', 'string', 'max:120', 'regex:/^[A-Za-z0-9._-]+$/'],
             'rclone_remote' => ['nullable', 'string', 'max:64'],
             'rclone_token' => ['nullable', 'string'],
@@ -47,24 +48,27 @@ class ServerController extends Controller
             'ssh_password' => $data['ssh_password'],
             'ssh_private_key' => '',
             'ssh_public_key' => null,
-            'restic_password' => Server::DEFAULT_RESTIC_PASSWORD,
-            'restic_repo_slug' => $data['restic_repo_slug'] ?: null,
+            'restic_password' => $data['restic_password'] ?: Server::DEFAULT_RESTIC_PASSWORD,
+            'restic_repo_slug' => $data['restic_repo_slug']
+                ?: (preg_replace('/[^a-zA-Z0-9._-]/', '-', $data['name']) ?: null),
             'rclone_remote' => $data['rclone_remote'] ?: 'yandex',
             'rclone_token' => $data['rclone_token'] ?? null,
             'setup_step' => Server::STEP_SETTINGS,
         ]);
 
+        if ($server->readyForRemoteSetup()) {
+            return redirect()
+                ->route('servers.show', $server)
+                ->with('success', 'Сервер создан. Можно сразу установить restic — проекты не обязательны.');
+        }
+
         return redirect()
-            ->route('servers.wizard.step2', $server)
-            ->with('success', 'Сервер создан. На шаге 2 найдите конфиги MODX.');
+            ->route('servers.wizard.step1', $server)
+            ->with('success', 'Сервер создан. Укажите Rclone token, затем установите restic.');
     }
 
     public function show(Server $server): View|RedirectResponse
     {
-        if (! $server->isWizardComplete()) {
-            return redirect()->route($server->wizardRoute(), $server);
-        }
-
         $server->load([
             'projects.database',
             'projects.modxConfig',
@@ -77,8 +81,9 @@ class ServerController extends Controller
 
     public function restoreGuide(Server $server): View|RedirectResponse
     {
-        if (! $server->isWizardComplete()) {
-            return redirect()->route($server->wizardRoute(), $server);
+        if (! $server->is_setup_complete && ! $server->isWizardComplete()) {
+            return redirect()->route('servers.show', $server)
+                ->with('error', 'Сначала установите restic на сервере.');
         }
 
         $server->load(['projects.database']);
@@ -88,10 +93,6 @@ class ServerController extends Controller
 
     public function edit(Server $server): View|RedirectResponse
     {
-        if (! $server->isWizardComplete()) {
-            return redirect()->route($server->wizardRoute(), $server);
-        }
-
         return redirect()->route('servers.wizard.step1', $server);
     }
 
@@ -103,6 +104,7 @@ class ServerController extends Controller
             'ssh_port' => ['required', 'integer', 'min:1', 'max:65535'],
             'ssh_user' => ['required', 'string', 'max:255'],
             'ssh_password' => ['nullable', 'string'],
+            'restic_password' => ['required', 'string', 'min:8'],
             'restic_repo_slug' => ['nullable', 'string', 'max:120', 'regex:/^[A-Za-z0-9._-]+$/'],
             'rclone_remote' => ['nullable', 'string', 'max:64'],
             'rclone_token' => ['nullable', 'string'],
@@ -114,7 +116,7 @@ class ServerController extends Controller
             'ssh_port' => $data['ssh_port'],
             'ssh_user' => $data['ssh_user'],
             'ssh_auth_type' => Server::AUTH_PASSWORD,
-            'restic_password' => Server::DEFAULT_RESTIC_PASSWORD,
+            'restic_password' => $data['restic_password'] ?: Server::DEFAULT_RESTIC_PASSWORD,
             'rclone_remote' => $data['rclone_remote'] ?: 'yandex',
         ];
 
@@ -154,12 +156,12 @@ class ServerController extends Controller
 
     public function setup(Server $server, RemoteSetupService $setup): RedirectResponse
     {
-        if ($server->restic_password !== Server::DEFAULT_RESTIC_PASSWORD) {
+        if (empty($server->restic_password)) {
             $server->update(['restic_password' => Server::DEFAULT_RESTIC_PASSWORD]);
         }
 
-        if (! $server->readyForRemoteSetup()) {
-            return back()->with('error', 'Укажите Rclone token на шаге 1 мастера. Пароль restic: '.Server::DEFAULT_RESTIC_PASSWORD);
+        if (! $server->fresh()->readyForRemoteSetup()) {
+            return back()->with('error', 'Укажите токен Яндекс.Диска на шаге 1.');
         }
 
         try {

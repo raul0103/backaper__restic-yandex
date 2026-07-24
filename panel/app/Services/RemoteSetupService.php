@@ -11,7 +11,7 @@ class RemoteSetupService
     public function setup(Server $server): string
     {
         if (! $server->readyForRemoteSetup()) {
-            throw new \RuntimeException('Завершите мастер настройки и укажите RESTIC_PASSWORD и rclone token.');
+            throw new \RuntimeException('Укажите SSH, rclone token и сохраните шаг 1 — затем установите restic.');
         }
 
         $installScript = file_get_contents(resource_path('scripts/remote/install.sh'));
@@ -25,14 +25,13 @@ class RemoteSetupService
         }
         $this->ssh->exec($server, 'chmod +x ~/backaper/scripts/install.sh ~/backaper/scripts/backup.sh');
 
-        $repoSlug = $server->repoSlug();
-        $hostname = $this->ssh->exec($server, 'hostname -s 2>/dev/null || hostname');
+        // Закрепляем slug из названия сервера (не из hostname машины)
         if ($server->restic_repo_slug === null || $server->restic_repo_slug === '') {
-            $fallback = preg_replace('/[^a-zA-Z0-9._-]/', '-', $hostname) ?: 'server';
-            $server->update(['restic_repo_slug' => $fallback]);
-            $repoSlug = $server->fresh()->repoSlug();
+            $fromName = preg_replace('/[^a-zA-Z0-9._-]/', '-', (string) $server->name) ?: 'server';
+            $server->update(['restic_repo_slug' => $fromName]);
         }
 
+        $repoSlug = $server->fresh()->repoSlug();
         $env = $this->buildSetupEnv($server, $repoSlug);
         $command = "env {$env} bash ~/backaper/scripts/install.sh 2>&1";
         $log = $this->ssh->exec($server, $command);

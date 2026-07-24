@@ -19,7 +19,7 @@ class Server extends Model
     public const STEP_COMPLETE = 5;
 
     /** Единый пароль шифрования restic для всех серверов/проектов. */
-    public const DEFAULT_RESTIC_PASSWORD = 'backaper$$';
+    public const DEFAULT_RESTIC_PASSWORD = 'backaper658715';
 
     protected $fillable = [
         'name',
@@ -228,7 +228,8 @@ class Server extends Model
 
     public function readyForRemoteSetup(): bool
     {
-        return $this->isWizardComplete()
+        return ! empty($this->host)
+            && ! empty($this->ssh_user)
             && ! empty($this->restic_password)
             && ! empty($this->rclone_token);
     }

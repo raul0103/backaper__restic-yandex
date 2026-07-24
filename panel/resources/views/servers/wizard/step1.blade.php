@@ -19,6 +19,9 @@
         <div>
             <label class="label">Название</label>
             <input name="name" value="{{ old('name', $server->name) }}" required class="input">
+            <p class="text-xs text-slate-500 mt-1.5 mb-0">
+                Имя в панели. Для папки бэкапов — поле ниже (часто то же самое, латиницей).
+            </p>
         </div>
 
         <div class="grid sm:grid-cols-2 gap-4">
@@ -48,9 +51,16 @@
 
         <div class="flex flex-wrap gap-3 pt-2">
             <button type="submit" class="btn btn-primary">Сохранить</button>
-            @if($server->isWizardComplete())
-                <a href="{{ route('servers.show', $server) }}" class="btn btn-secondary">← К серверу</a>
-            @elseif($server->setup_step >= \App\Models\Server::STEP_SETTINGS)
+            @if($server->readyForRemoteSetup())
+                <form method="post" action="{{ route('servers.setup', $server) }}" class="inline">
+                    @csrf
+                    <button type="submit" class="btn btn-blue">
+                        {{ $server->is_setup_complete ? 'Переустановить restic' : 'Установить restic' }}
+                    </button>
+                </form>
+            @endif
+            <a href="{{ route('servers.show', $server) }}" class="btn btn-secondary">К серверу</a>
+            @if(!$server->isWizardComplete() && $server->setup_step >= \App\Models\Server::STEP_SETTINGS)
                 <a href="{{ route('servers.wizard.step2', $server) }}" class="btn btn-secondary">К шагу 2 →</a>
             @endif
         </div>

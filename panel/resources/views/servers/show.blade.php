@@ -8,15 +8,17 @@
         <h1 class="page-title">{{ $server->name }}</h1>
         <p class="page-subtitle">{{ $server->ssh_user.'@'.$server->host }}:{{ $server->ssh_port }}</p>
         <p class="text-sm text-slate-500 mt-2">
-            Restic: <code class="text-xs bg-brand-50 text-brand-700 px-1.5 py-0.5 rounded">{{ $server->resticRepository() }}</code>
-        </p>
-        <p class="text-xs text-slate-400 mt-1">
-            Файлы: restic snapshot в {{ $server->resticRepository() }} ·
-            БД: {{ $server->cloudPrefix() }}/databases/{имя_бд}/{дата}.sql.gz
+            Бэкапы:
+            <code class="text-xs bg-brand-50 text-brand-700 px-1.5 py-0.5 rounded">{{ $server->repoSlug() }}</code>
+            · файлы в restic, БД в
+            <code class="text-xs">{{ $server->cloudPrefix() }}/databases/</code>
         </p>
     </div>
     <div class="flex flex-wrap gap-2 shrink-0">
-        <a href="{{ route('servers.wizard.step1', $server) }}" class="btn btn-secondary">SSH и restic</a>
+        <a href="{{ route('servers.wizard.step1', $server) }}" class="btn btn-secondary">SSH и облако</a>
+        @unless($server->isWizardComplete())
+            <a href="{{ route($server->wizardRoute(), $server) }}" class="btn btn-secondary">Мастер →</a>
+        @endunless
         @if($server->readyForRemoteSetup())
             <form method="post" action="{{ route('servers.setup', $server) }}">@csrf<button type="submit" class="btn btn-blue">{{ $server->is_setup_complete ? 'Переустановить restic' : 'Установить restic' }}</button></form>
         @endif
@@ -31,46 +33,33 @@
 
 @if(!$server->is_setup_complete)
 <section class="callout-amber mb-8">
-    <h2 class="font-semibold text-amber-900 mb-2">Restic не настроен — всё из панели, без SSH на сервер</h2>
-    <ol class="text-sm text-amber-950 space-y-2 list-decimal list-inside">
-        <li>
-            Откройте
-            <a href="{{ route('servers.wizard.step1', $server) }}" class="text-brand-700 font-medium hover:underline">шаг 1 — SSH и облако</a>:
-            <strong>Rclone token</strong> (JSON), remote <code>yandex</code> → <strong>Сохранить</strong>.
-            Пароль restic всегда <code class="font-mono">{{ \App\Models\Server::DEFAULT_RESTIC_PASSWORD }}</code>.
-        </li>
-        <li>На этой странице нажмите <strong>«Установить restic»</strong> — панель по SSH поставит restic/rclone и создаст репозиторий.</li>
-        <li>После статуса <strong>«Готов»</strong> — кнопка <strong>«Бэкап всех»</strong>.</li>
+    <h2 class="font-semibold text-amber-900 mb-2">Осталось установить restic</h2>
+    <ol class="text-sm text-amber-950 space-y-1.5 list-decimal list-inside mb-0">
+        <li>На <a href="{{ route('servers.wizard.step1', $server) }}" class="text-brand-700 font-medium hover:underline">шаге 1</a> — токен Яндекс.Диска и имя папки бэкапов → Сохранить.</li>
+        <li>Кнопка <strong>«Установить restic»</strong> выше (проекты не обязательны).</li>
     </ol>
-    @if(empty($server->restic_password))
-        <p class="text-sm text-red-700 mt-3 mb-0">Не задан RESTIC_PASSWORD — сохраните <a href="{{ route('servers.wizard.step1', $server) }}" class="underline">шаг 1</a> ещё раз.</p>
-    @endif
     @if(empty($server->rclone_token))
-        <p class="text-sm text-red-700 mt-2 mb-0">Не задан Rclone token — JSON с <code>rclone authorize "yandex"</code> вставьте на <a href="{{ route('servers.wizard.step1', $server) }}" class="underline">шаге 1</a>.</p>
+        <p class="text-sm text-red-700 mt-3 mb-0">Нет токена Яндекс.Диска — добавьте на шаге 1.</p>
     @endif
 </section>
-@endif
-
-@if($server->is_setup_complete)
+@elseif(!$server->isWizardComplete())
 <section class="callout-amber mb-8">
-    <h2 class="font-semibold text-amber-900 mb-2">Сменили Rclone token?</h2>
     <p class="text-sm text-amber-950 mb-0">
-        Сохраните новый JSON на
-        <a href="{{ route('servers.wizard.step1', $server) }}" class="text-brand-700 font-medium hover:underline">шаге 1</a>,
-        затем нажмите <strong>«Переустановить restic»</strong> выше — панель зальёт токен на сервер и обновит rclone.
-        Без этого бэкапы продолжат идти в <em>старый</em> аккаунт Яндекс.Диска.
+        Restic готов. Проекты можно добавить через
+        <a href="{{ route($server->wizardRoute(), $server) }}" class="text-brand-700 font-medium hover:underline">мастер</a>
+        или после восстановления сайта.
     </p>
 </section>
 @endif
 
 <div class="grid sm:grid-cols-3 gap-4 mb-8">
     <div class="card stat-card">
-        <div class="stat-label">Restic setup</div>
+        <div class="stat-label">Restic</div>
         <div class="stat-value">
             @if($server->is_setup_complete)
                 <span class="text-brand-600">Готов</span>
             @else
-                <span class="text-amber-600">Не настроен</span>
+                <span class="text-amber-600">Не установлен</span>
             @endif
         </div>
     </div>
@@ -86,7 +75,7 @@
 
 @if ($server->setup_log && !$server->is_setup_complete)
 <section class="mb-8">
-    <h2 class="section-title">Лог setup</h2>
+    <h2 class="section-title">Лог установки</h2>
     <pre class="log-block">{{ $server->setup_log }}</pre>
 </section>
 @endif

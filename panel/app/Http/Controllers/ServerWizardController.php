@@ -33,6 +33,7 @@ class ServerWizardController extends Controller
             'ssh_port' => ['required', 'integer', 'min:1', 'max:65535'],
             'ssh_user' => ['required', 'string', 'max:255'],
             'ssh_password' => ['nullable', 'string'],
+            'restic_password' => ['required', 'string', 'min:8'],
             'restic_repo_slug' => ['nullable', 'string', 'max:120', 'regex:/^[A-Za-z0-9._-]+$/'],
             'rclone_remote' => ['nullable', 'string', 'max:64'],
             'rclone_token' => ['nullable', 'string'],
@@ -43,7 +44,7 @@ class ServerWizardController extends Controller
             'host' => $data['host'],
             'ssh_port' => $data['ssh_port'],
             'ssh_user' => $data['ssh_user'],
-            'restic_password' => Server::DEFAULT_RESTIC_PASSWORD,
+            'restic_password' => $data['restic_password'] ?: Server::DEFAULT_RESTIC_PASSWORD,
             'rclone_remote' => $data['rclone_remote'] ?: 'yandex',
         ];
 
@@ -64,19 +65,20 @@ class ServerWizardController extends Controller
 
         $server->update($update);
 
-        if ($server->isWizardComplete()) {
-            $redirect = redirect()->route('servers.show', $server);
-
-            if ($tokenChanged) {
-                return $redirect
-                    ->with('success', 'Настройки сохранены.')
-                    ->with('warning', 'Токен Яндекс.Диска изменён. На этой странице нажмите «Переустановить restic», чтобы применить его на сервере — иначе бэкапы пойдут в старый аккаунт.');
-            }
-
-            return $redirect->with('success', 'SSH и restic/rclone сохранены.');
+        if ($tokenChanged && $server->fresh()->readyForRemoteSetup()) {
+            return redirect()
+                ->route('servers.show', $server)
+                ->with('success', 'Настройки сохранены.')
+                ->with('warning', 'Токен Яндекс.Диска изменён. Нажмите «Установить restic» / «Переустановить restic», чтобы применить его на сервере.');
         }
 
-        return back()->with('success', 'Настройки сохранены');
+        if ($server->fresh()->readyForRemoteSetup()) {
+            return redirect()
+                ->route('servers.show', $server)
+                ->with('success', 'SSH и облако сохранены. Можно установить restic.');
+        }
+
+        return back()->with('success', 'Настройки сохранены. Добавьте Rclone token, чтобы установить restic.');
     }
 
     public function step2(Server $server): View|RedirectResponse

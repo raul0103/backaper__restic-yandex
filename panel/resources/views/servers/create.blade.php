@@ -20,6 +20,9 @@
             <label class="label">Название</label>
             <input name="name" value="{{ old('name') }}" required placeholder="prod-vps-1" class="input @error('name') input-error @enderror">
             @error('name')<p class="text-red-600 text-sm mt-1">{{ $message }}</p>@enderror
+            <p class="text-xs text-slate-500 mt-1.5 mb-0">
+                Имя в панели. Для папки бэкапов в облаке — поле «Имя папки бэкапов» ниже (часто то же самое).
+            </p>
         </div>
 
         <div class="grid sm:grid-cols-2 gap-4">
@@ -49,7 +52,7 @@
         @php($server = new \App\Models\Server(['rclone_remote' => 'yandex']))
         @include('servers.wizard._step1_fields')
 
-        <button type="submit" class="btn btn-primary w-full sm:w-auto">Создать и перейти к шагу 2</button>
+        <button type="submit" class="btn btn-primary w-full sm:w-auto">Создать сервер</button>
     </form>
 </div>
 @endsection
