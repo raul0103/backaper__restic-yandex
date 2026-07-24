@@ -173,19 +173,24 @@ class BackupOrchestrator
 #!/bin/bash
 # {$marker}
 export BACKAPER_MANIFEST="{$manifestPath}"
+set +e
 bash ~/backaper/scripts/backup.sh
-echo done > "{$donePath}"
+ec=\$?
+echo "\$ec" > "{$donePath}"
+exit "\$ec"
 BASH;
 
         $this->ssh->upload($server, $runScriptPath, $runScript);
 
+        // setsid: на shared-хостинге (Beget) nohup+SSH часто теряет PID / получает SIGHUP
         $start = <<<BASH
 base={$base}
 mkdir -p "\$base"
 rm -f "{$donePath}" "{$pidPath}" "{$logPath}"
 chmod +x "{$runScriptPath}"
-nohup bash "{$runScriptPath}" > "{$logPath}" 2>&1 &
+setsid bash "{$runScriptPath}" > "{$logPath}" 2>&1 < /dev/null &
 echo \$! > "{$pidPath}"
+sleep 1
 cat "{$pidPath}"
 BASH;
 
@@ -217,15 +222,46 @@ BASH;
         $base = $this->remoteBaseDir($run, $server);
         $pidPath = $base.'/pid';
         $donePath = $base.'/done';
+        $logPath = $base.'/run.log';
+        $marker = 'backaper-backup-'.$run->id;
 
+        // kill -0 на Beget часто врёт; смотрим done / маркер процесса / свежесть лога
         $check = <<<BASH
 if [ -f "{$donePath}" ]; then
-  echo DONE
+  ec=\$(tr -d '[:space:]' < "{$donePath}")
+  if [ "\$ec" = "0" ] || [ "\$ec" = "done" ]; then
+    echo DONE
+  else
+    echo FAILED
+  fi
   exit 0
 fi
-if [ -f "{$pidPath}" ] && kill -0 "\$(cat "{$pidPath}")" 2>/dev/null; then
+if [ -f "{$pidPath}" ]; then
+  pid=\$(tr -d '[:space:]' < "{$pidPath}")
+  if [ -n "\$pid" ] && kill -0 "\$pid" 2>/dev/null; then
+    echo RUNNING
+    exit 0
+  fi
+fi
+if pgrep -f "{$marker}" >/dev/null 2>&1; then
   echo RUNNING
   exit 0
+fi
+if pgrep -x restic >/dev/null 2>&1 || pgrep -x rclone >/dev/null 2>&1; then
+  if [ -f "{$logPath}" ]; then
+    age=\$(( \$(date +%s) - \$(stat -c %Y "{$logPath}" 2>/dev/null || echo 0) ))
+    if [ "\$age" -lt 600 ]; then
+      echo RUNNING
+      exit 0
+    fi
+  fi
+fi
+if [ -f "{$logPath}" ]; then
+  age=\$(( \$(date +%s) - \$(stat -c %Y "{$logPath}" 2>/dev/null || echo 0) ))
+  if [ "\$age" -lt 180 ]; then
+    echo RUNNING
+    exit 0
+  fi
 fi
 echo FAILED
 BASH;
