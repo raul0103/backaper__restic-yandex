@@ -54,7 +54,8 @@
 - `restic.md` — установка restic, бэкап, исключения и восстановление.
 - `remote-orchestration.md` — restic на каждом сервере, запуск с control-машины по SSH, дамп БД.
 - `central-backup.md` — альтернатива: одна машина, rsync по SSH, restic только на ней.
-- `panel/` — **Laravel UI**: SSH-setup, поиск MODX, исключения, бэкап с дампом БД.
+- `panel/` — Laravel UI v1: бэкап по MODX-проектам.
+- `panel-v2/` — Laravel UI v2: полный бэкап VPS/хостинга + отдельные дампы БД (проще для пользователя).
 
 ## Минимальный чек-лист
 
