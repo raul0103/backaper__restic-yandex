@@ -64,6 +64,16 @@
         </ul>
     </section>
 
+    <section class="card p-6">
+        <h2 class="section-title">Переустановка restic</h2>
+        <p class="text-sm text-slate-600 mb-3">Нужна, если:</p>
+        <ul class="list-disc pl-5 space-y-1 text-sm text-slate-600">
+            <li>удалили папки бэкапа на Яндекс.Диске;</li>
+            <li>сменили пароль шифрования, токен или имя папки в настройках сервера.</li>
+        </ul>
+        <p class="text-sm text-slate-600 mt-3">На странице сервера нажмите <strong>«Переустановить restic»</strong> — панели сама пересоздаст репозиторий.</p>
+    </section>
+
     <div class="pt-2">
         <a href="{{ route('servers.create') }}" class="btn btn-primary">Добавить первый сервер</a>
     </div>

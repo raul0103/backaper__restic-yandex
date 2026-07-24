@@ -17,11 +17,25 @@
                 <button type="submit" class="btn btn-primary">Запустить бэкап</button>
             </form>
         @endif
+        @if ($server->readyForRemoteSetup())
+            <form method="post" action="{{ route('servers.setup', $server) }}">@csrf
+                <button type="submit" class="btn btn-secondary">
+                    {{ $server->is_setup_complete ? 'Переустановить restic' : 'Установить restic' }}
+                </button>
+            </form>
+        @endif
         <a href="{{ route('servers.restore', $server) }}" class="btn btn-secondary">Восстановление</a>
         <a href="{{ route('servers.edit', $server) }}" class="btn btn-secondary">Изменить</a>
         <a href="{{ route('servers.wizard.content', $server) }}" class="btn btn-ghost">Базы данных</a>
     </div>
 </div>
+
+@if (! $server->is_setup_complete)
+    <div class="alert alert-warning mb-6">
+        restic не готов (удалили папки на Диске, сменили пароль/токен/папку, или ещё не ставили).
+        Нажмите <strong>«Установить restic»</strong> / <strong>«Переустановить restic»</strong> выше.
+    </div>
+@endif
 
 <div class="grid sm:grid-cols-3 gap-4 mb-8">
     <div class="card p-4">

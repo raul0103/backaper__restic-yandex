@@ -109,6 +109,13 @@ class ServerController extends Controller
             'rclone_token' => ['nullable', 'string'],
         ]);
 
+        $newSlug = $data['restic_repo_slug']
+            ?: (preg_replace('/[^a-zA-Z0-9._-]/', '-', $data['name']) ?: null);
+
+        $cloudChanged = $data['restic_password'] !== $server->restic_password
+            || (string) $newSlug !== (string) $server->restic_repo_slug
+            || (! empty($data['rclone_token']) && trim($data['rclone_token']) !== trim((string) $server->rclone_token));
+
         $payload = [
             'name' => $data['name'],
             'kind' => $data['kind'],
@@ -116,8 +123,7 @@ class ServerController extends Controller
             'ssh_port' => $data['ssh_port'],
             'ssh_user' => $data['ssh_user'],
             'restic_password' => $data['restic_password'],
-            'restic_repo_slug' => $data['restic_repo_slug']
-                ?: (preg_replace('/[^a-zA-Z0-9._-]/', '-', $data['name']) ?: null),
+            'restic_repo_slug' => $newSlug,
         ];
 
         if (! empty($data['ssh_password'])) {
@@ -127,8 +133,19 @@ class ServerController extends Controller
             $payload['rclone_token'] = $data['rclone_token'];
         }
 
+        if ($cloudChanged) {
+            $payload['is_setup_complete'] = false;
+            $payload['setup_log'] = null;
+        }
+
         $server->update($payload);
         $server->syncFullBackupPath();
+
+        if ($cloudChanged) {
+            return redirect()
+                ->route('servers.show', $server)
+                ->with('warning', 'Изменены данные облака/пароля. Нужно переустановить restic на сервере — иначе бэкап не заработает.');
+        }
 
         return redirect()->route('servers.show', $server)->with('success', 'Сохранено.');
     }
@@ -145,7 +162,7 @@ class ServerController extends Controller
         try {
             $log = $setup->setup($server);
             if ($server->fresh()->is_setup_complete) {
-                return back()->with('success', 'restic установлен. Можно настраивать пути и базы.');
+                return back()->with('success', 'restic переустановлен: конфиг и репозиторий на Яндекс.Диске готовы.');
             }
 
             return back()->with('error', 'Установка не завершилась.'.$this->shortLog($log));

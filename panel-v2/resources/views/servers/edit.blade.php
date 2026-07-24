@@ -7,6 +7,13 @@
     <h1 class="page-title">Изменить сервер</h1>
 </div>
 
+<div class="help-box mb-6">
+    <strong>Когда нужна переустановка restic:</strong>
+    если меняете пароль шифрования, имя папки на Яндекс.Диске или токен —
+    либо удалили папки бэкапа на Диске.
+    После сохранения нажмите <strong>«Переустановить restic»</strong> на странице сервера.
+</div>
+
 <form method="post" action="{{ route('servers.update', $server) }}" class="card p-6 space-y-5">
     @csrf
     @method('PUT')
@@ -44,10 +51,12 @@
     <div>
         <label class="label">Пароль шифрования</label>
         <input name="restic_password" value="{{ old('restic_password', $server->restic_password) }}" required class="input">
+        <p class="text-xs text-slate-400 mt-1">Смена пароля → обязательна переустановка restic (старые бэкапы со старым паролем не откроются).</p>
     </div>
     <div>
         <label class="label">Папка на Диске</label>
         <input name="restic_repo_slug" value="{{ old('restic_repo_slug', $server->restic_repo_slug) }}" class="input font-mono text-sm">
+        <p class="text-xs text-slate-400 mt-1">Смена имени или удаление папок на Диске → переустановите restic.</p>
     </div>
     <div>
         <label class="label">Токен Яндекс.Диска (оставьте пустым, чтобы не менять)</label>

@@ -15,11 +15,26 @@
                 <button type="submit" class="btn btn-primary">Запустить бэкап</button>
             </form>
         <?php endif; ?>
+        <?php if($server->readyForRemoteSetup()): ?>
+            <form method="post" action="<?php echo e(route('servers.setup', $server)); ?>"><?php echo csrf_field(); ?>
+                <button type="submit" class="btn btn-secondary">
+                    <?php echo e($server->is_setup_complete ? 'Переустановить restic' : 'Установить restic'); ?>
+
+                </button>
+            </form>
+        <?php endif; ?>
         <a href="<?php echo e(route('servers.restore', $server)); ?>" class="btn btn-secondary">Восстановление</a>
         <a href="<?php echo e(route('servers.edit', $server)); ?>" class="btn btn-secondary">Изменить</a>
         <a href="<?php echo e(route('servers.wizard.content', $server)); ?>" class="btn btn-ghost">Базы данных</a>
     </div>
 </div>
+
+<?php if(! $server->is_setup_complete): ?>
+    <div class="alert alert-warning mb-6">
+        restic не готов (удалили папки на Диске, сменили пароль/токен/папку, или ещё не ставили).
+        Нажмите <strong>«Установить restic»</strong> / <strong>«Переустановить restic»</strong> выше.
+    </div>
+<?php endif; ?>
 
 <div class="grid sm:grid-cols-3 gap-4 mb-8">
     <div class="card p-4">
