@@ -54,8 +54,11 @@
         @forelse ($server->databases as $db)
             <div class="p-4 flex justify-between gap-3">
                 <div>
-                    <div class="font-medium">{{ $db->displayName() }}</div>
-                    <div class="text-xs font-mono text-slate-400">{{ $db->database_name }} · {{ $db->source }}</div>
+                    <div class="font-medium font-mono">{{ $db->database_name }}</div>
+                    <div class="text-xs text-slate-400 mt-0.5">
+                        {{ $db->database_server }} · {{ $db->database_user }}
+                        @if ($db->source) · {{ $db->source }} @endif
+                    </div>
                 </div>
                 @if ($db->is_enabled)
                     <span class="badge badge-success">вкл</span>
@@ -64,7 +67,7 @@
                 @endif
             </div>
         @empty
-            <p class="p-4 text-sm text-slate-400">Нет баз — можно добавить через «Пути и базы»</p>
+            <p class="text-sm text-slate-400">Нет баз — откройте «Базы данных» и нажмите «Найти базы»</p>
         @endforelse
     </div>
 </section>

@@ -25,12 +25,43 @@ class Server extends Model
 
     public const AUTH_KEY = 'key';
 
-    /** Исключения для полного бэкапа файлов (restic). */
+    /** Исключения для полного бэкапа файлов (restic). Хостинг: + служебные каталоги Beget. */
     public const DEFAULT_EXCLUSIONS = [
         'core/cache/**',
         '**/node_modules/**',
         '**/.git/**',
         '**/vendor/**',
+        // Beget / shared — нет прав или бесполезно
+        '.service',
+        '.service/**',
+        '.cagefs',
+        '.cagefs/**',
+        '.cl.selector',
+        '.cl.selector/**',
+        '.spamassassin',
+        '.spamassassin/**',
+        '.softaculous',
+        '.softaculous/**',
+        '.local',
+        '.local/**',
+        '.cache',
+        '.cache/**',
+        '.composer',
+        '.composer/**',
+        '.npm',
+        '.npm/**',
+        '.config',
+        '.config/**',
+        'mail',
+        'mail/**',
+        'tmp',
+        'tmp/**',
+        '.tmp',
+        '.tmp/**',
+        '**/lscache/**',
+        '**/cgi-bin/**',
+        'backaper/tmp/**',
+        '.backaper/**',
     ];
 
     /** Доп. исключения при бэкапе всего VPS (/). */
@@ -182,7 +213,7 @@ class Server extends Model
             return ['path' => '/', 'label' => 'Весь сервер (/)'];
         }
 
-        return ['path' => '~', 'label' => 'Весь аккаунт хостинга'];
+        return ['path' => '~', 'label' => 'Hosting home', 'slug' => 'home'];
     }
 
     /** @return list<string> */

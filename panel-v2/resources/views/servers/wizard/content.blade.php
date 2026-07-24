@@ -41,10 +41,13 @@
                     <label class="flex items-start gap-3 p-3 rounded-lg hover:bg-slate-50">
                         <input type="checkbox" name="databases[{{ $db->id }}][enabled]" value="1" @checked($db->is_enabled) class="mt-1 w-4 h-4">
                         <div class="min-w-0">
-                            <div class="font-medium text-slate-900">{{ $db->displayName() }}</div>
-                            <div class="text-xs text-slate-500 font-mono truncate">
-                                {{ $db->database_user }}@{{ $db->database_server }} / {{ $db->database_name }}
-                                @if ($db->source) · {{ $db->source }} @endif
+                            <div class="font-medium text-slate-900 font-mono">{{ $db->database_name }}</div>
+                            <div class="text-xs text-slate-500 mt-0.5">
+                                Хост: <span class="font-mono">{{ $db->database_server }}</span>
+                                · пользователь: <span class="font-mono">{{ $db->database_user }}</span>
+                                @if ($db->source)
+                                    · {{ $db->source }}
+                                @endif
                             </div>
                         </div>
                     </label>

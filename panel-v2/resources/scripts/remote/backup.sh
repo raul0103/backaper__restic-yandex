@@ -14,6 +14,15 @@ trap cleanup EXIT
 
 log() { echo "[backup] $(date -Is) $*"; }
 
+# Построчный вывод в лог (иначе при redirect в файл restic «молчит» часами)
+restic_run() {
+  if command -v stdbuf >/dev/null 2>&1; then
+    stdbuf -oL -eL restic "$@"
+  else
+    restic "$@"
+  fi
+}
+
 file_bytes() {
   stat -c%s "$1" 2>/dev/null || stat -f%z "$1" 2>/dev/null || echo 0
 }
@@ -73,37 +82,91 @@ log "=== Yandex Disk (${RCLONE_REMOTE}) ==="
 rclone about "${RCLONE_REMOTE}:" 2>&1 | sed 's/^/[backup]   /' || log "WARN: rclone about failed"
 
 # --- 1) Полный бэкап путей ---
-for i in $(seq 0 $((path_count - 1))); do
-  label="$(jq -r ".paths[$i].label // .paths[$i].path" "$MANIFEST_FILE")"
-  root="$(jq -r ".paths[$i].path" "$MANIFEST_FILE")"
-  slug="$(sanitize_slug "$(jq -r ".paths[$i].slug // .paths[$i].label // .paths[$i].path" "$MANIFEST_FILE")")"
-
-  # ~ → $HOME
-  if [[ "$root" == "~" || "$root" == "~/"* ]]; then
-    root="${root/#\~/$HOME}"
-  fi
+backup_one_tree() {
+  local root="$1"
+  local label="$2"
+  local slug="$3"
 
   log "=== FILES: ${label} (${root}) ==="
   if [[ ! -d "$root" ]]; then
     log "SKIP: path missing"
-    continue
+    return 0
   fi
 
-  exclude_args=()
+  local exclude_args=()
+  local ex
   while IFS= read -r ex; do
     [[ -z "$ex" ]] && continue
     exclude_args+=(--exclude "$ex")
   done < <(jq -r '.exclusions[]?' "$MANIFEST_FILE")
 
   log "restic backup ${root}"
-  if ! restic backup "$root" \
+  set +e
+  (
+    while true; do
+      sleep 60
+      echo "[backup] $(date -Is) … ${label}: restic ещё работает"
+    done
+  ) &
+  local heartbeat_pid=$!
+
+  # Меньше RAM на shared-хостинге (Beget убивает жирные процессы без записи в лог)
+  GOMAXPROCS="${GOMAXPROCS:-1}" GOGC="${GOGC:-50}" \
+  restic_run backup "$root" \
     "${exclude_args[@]}" \
+    --one-file-system \
     --tag "path:${slug}" \
-    --host "$(hostname -s 2>/dev/null || hostname)"; then
-    log "ERROR: restic failed for ${label} — continue"
-    continue
+    --host "$(hostname -s 2>/dev/null || hostname)" \
+    --verbose=1
+  local ec=$?
+
+  kill "$heartbeat_pid" 2>/dev/null || true
+  wait "$heartbeat_pid" 2>/dev/null || true
+  set -e
+
+  if [[ "$ec" -eq 0 ]]; then
+    log "OK files: ${label}"
+  elif [[ "$ec" -eq 3 ]]; then
+    log "WARN: ${label}: часть файлов без доступа — пропущены, снимок сохранён"
+  elif [[ "$ec" -ge 128 ]]; then
+    log "ERROR: ${label}: restic убит сигналом (exit ${ec}) — часто лимит RAM на хостинге. Продолжаем."
+  else
+    log "ERROR: ${label}: restic exit ${ec} — продолжаем"
   fi
-  log "OK files: ${label}"
+}
+
+for i in $(seq 0 $((path_count - 1))); do
+  label="$(jq -r ".paths[$i].label // .paths[$i].path" "$MANIFEST_FILE")"
+  root="$(jq -r ".paths[$i].path" "$MANIFEST_FILE")"
+  slug="$(sanitize_slug "$(jq -r ".paths[$i].slug // .paths[$i].path" "$MANIFEST_FILE")")"
+
+  if [[ "$root" == "~" || "$root" == "~/"* ]]; then
+    root="${root/#\~/$HOME}"
+  fi
+
+  # Весь $HOME одним куском на Beget → OOM kill (процесс исчезает, лог обрывается).
+  # Бэкапим каждую папку верхнего уровня отдельно.
+  if [[ "$root" == "$HOME" || "$root" == "$HOME/" ]]; then
+    log "Хостинг: бэкап по папкам в ${HOME} (так не убивают по памяти)"
+    shopt -s nullglob
+    local_children=("$HOME"/*/)
+    if [[ ${#local_children[@]} -eq 0 ]]; then
+      log "WARN: в домашнем каталоге нет папок"
+      continue
+    fi
+    for child in "${local_children[@]}"; do
+      child="${child%/}"
+      name="$(basename "$child")"
+      case "$name" in
+        backaper|tmp|mail|logs|bin) log "SKIP folder: ${name}"; continue ;;
+      esac
+      backup_one_tree "$child" "$name" "$(sanitize_slug "$name")"
+    done
+  else
+    [[ -z "$slug" || "$slug" =~ ^_+$ ]] && slug="$(sanitize_slug "$(basename "$root")")"
+    [[ -z "$slug" || "$slug" =~ ^_+$ ]] && slug="files"
+    backup_one_tree "$root" "$label" "$slug"
+  fi
 done
 
 # --- 2) Отдельные дампы БД ---

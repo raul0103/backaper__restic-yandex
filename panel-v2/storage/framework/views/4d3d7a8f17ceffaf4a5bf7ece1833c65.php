@@ -3,8 +3,6 @@
 <?php $__env->startSection('content'); ?>
 <?php echo $__env->make('servers.wizard._steps', ['current' => 3, 'server' => $server], array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?>
 
-<?php ($target = $server->fullBackupTarget()); ?>
-
 <div class="mb-8">
     <h1 class="page-title">Шаг 3 — Базы данных</h1>
     <p class="page-subtitle">Файлы бэкапятся целиком автоматически. Здесь только дампы БД.</p>
@@ -41,11 +39,14 @@
                     <label class="flex items-start gap-3 p-3 rounded-lg hover:bg-slate-50">
                         <input type="checkbox" name="databases[<?php echo e($db->id); ?>][enabled]" value="1" <?php if($db->is_enabled): echo 'checked'; endif; ?> class="mt-1 w-4 h-4">
                         <div class="min-w-0">
-                            <div class="font-medium text-slate-900"><?php echo e($db->displayName()); ?></div>
-                            <div class="text-xs text-slate-500 font-mono truncate">
-                                <?php echo e($db->database_user); ?>{{ $db->database_server }} / <?php echo e($db->database_name); ?>
+                            <div class="font-medium text-slate-900 font-mono"><?php echo e($db->database_name); ?></div>
+                            <div class="text-xs text-slate-500 mt-0.5">
+                                Хост: <span class="font-mono"><?php echo e($db->database_server); ?></span>
+                                · пользователь: <span class="font-mono"><?php echo e($db->database_user); ?></span>
+                                <?php if($db->source): ?>
+                                    · <?php echo e($db->source); ?>
 
-                                <?php if($db->source): ?> · <?php echo e($db->source); ?> <?php endif; ?>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </label>

@@ -36,6 +36,6 @@ class DatabaseCredential extends Model
 
     public function displayName(): string
     {
-        return $this->label ?: $this->database_name;
+        return $this->database_name ?: ($this->label ?: 'database');
     }
 }

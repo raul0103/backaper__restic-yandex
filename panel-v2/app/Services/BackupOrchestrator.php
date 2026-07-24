@@ -161,7 +161,11 @@ base={$base}
 mkdir -p "\$base"
 rm -f "{$donePath}" "{$pidPath}" "{$logPath}"
 chmod +x "{$runScriptPath}"
-setsid bash "{$runScriptPath}" > "{$logPath}" 2>&1 < /dev/null &
+if command -v stdbuf >/dev/null 2>&1; then
+  setsid stdbuf -oL -eL bash "{$runScriptPath}" > "{$logPath}" 2>&1 < /dev/null &
+else
+  setsid bash "{$runScriptPath}" > "{$logPath}" 2>&1 < /dev/null &
+fi
 echo \$! > "{$pidPath}"
 sleep 1
 cat "{$pidPath}"
@@ -290,7 +294,9 @@ BASH;
             ->map(fn (BackupPath $p) => [
                 'path' => $p->path,
                 'label' => $p->displayName(),
-                'slug' => $server->storageSlug($p->displayName()),
+                'slug' => $server->storageSlug($p->path === '~' || $p->path === '/'
+                    ? ($p->path === '/' ? 'root' : 'home')
+                    : ($p->label ?: basename(rtrim($p->path, '/')) ?: 'files')),
             ])
             ->values()
             ->all();
