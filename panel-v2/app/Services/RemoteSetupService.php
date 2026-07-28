@@ -97,6 +97,8 @@ class RemoteSetupService
             'BACKAPER_RESTIC_PASSWORD' => $server->restic_password,
             'BACKAPER_RESTIC_REPOSITORY' => $server->resticRepository(),
             'BACKAPER_CLOUD_PREFIX' => $server->cloudPrefix(),
+            'BACKAPER_BACKUP_ROOT' => $server->isVps() ? '/' : '$HOME',
+            'BACKAPER_FILES_TAG' => $server->isVps() ? 'path:root' : 'path:home',
         ];
 
         $parts = [];

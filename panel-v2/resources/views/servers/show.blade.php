@@ -95,6 +95,7 @@ screen -d -r backup-files</pre>
         </p>
         <pre class="code-block mb-3">screen -S backup-files
 source ~/backaper/backaper.env
+# VPS: root=/ ; Hosting: root=$HOME
 bash ~/backaper/scripts/backup-files.sh</pre>
         <p class="text-sm text-slate-600 mb-2">Медленнее (если убивает процесс):</p>
         <pre class="code-block">BACKAPER_UPLOAD_LIMIT_KIB=1024 bash ~/backaper/scripts/backup-files.sh</pre>
