@@ -6,7 +6,7 @@
 <div class="flex items-center justify-between mb-8">
     <div>
         <h1 class="page-title">Серверы</h1>
-        <p class="page-subtitle">VPS и хостинги для бэкапа</p>
+        <p class="page-subtitle">SSH + restic; бэкапы — по CLI</p>
     </div>
     <a href="{{ route('servers.create') }}" class="btn btn-primary">+ Сервер</a>
 </div>
@@ -22,7 +22,11 @@
                 </div>
             </div>
             <div class="text-sm text-slate-500">
-                путей {{ $server->backup_paths_count }} · баз {{ $server->databases_count }}
+                @if ($server->is_setup_complete)
+                    <span class="badge badge-success">restic ок</span>
+                @else
+                    <span class="badge badge-warning">нужна установка</span>
+                @endif
             </div>
         </div>
     </a>

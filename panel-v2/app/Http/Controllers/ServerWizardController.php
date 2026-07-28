@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Server;
-use App\Services\DatabaseDiscoveryService;
 use App\Services\RemoteSetupService;
 use App\Services\SshService;
 use Illuminate\Http\RedirectResponse;
@@ -74,16 +73,18 @@ class ServerWizardController extends Controller
 
     public function runInstall(Server $server, RemoteSetupService $setup): RedirectResponse
     {
+        set_time_limit(300);
+
         try {
             $log = $setup->setup($server);
             if (! $server->fresh()->is_setup_complete) {
                 return back()->with('error', 'Установка не удалась. Проверьте SSH и токен. '.substr($log, -500));
             }
 
-            $server->update(['setup_step' => max($server->setup_step, Server::STEP_CONTENT)]);
+            $server->update(['setup_step' => Server::STEP_COMPLETE]);
 
-            return redirect()->route('servers.wizard.content', $server)
-                ->with('success', 'Готово! Программа бэкапа установлена. Укажите, что сохранять.');
+            return redirect()->route('servers.show', $server)
+                ->with('success', 'Готово! restic установлен. Бэкапы запускайте по SSH — инструкция на странице сервера.');
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
         }
@@ -98,60 +99,5 @@ class ServerWizardController extends Controller
         } catch (\Throwable $e) {
             return back()->with('error', 'SSH ошибка: '.$e->getMessage());
         }
-    }
-
-    public function content(Server $server): View|RedirectResponse
-    {
-        if (! $server->is_setup_complete) {
-            return redirect()->route('servers.wizard.install', $server)
-                ->with('error', 'Сначала установите программу бэкапа.');
-        }
-
-        $server->syncFullBackupPath();
-        $server->load(['backupPaths', 'databases']);
-
-        return view('servers.wizard.content', compact('server'));
-    }
-
-    public function discoverDatabases(Server $server, DatabaseDiscoveryService $discovery): RedirectResponse
-    {
-        try {
-            $result = $discovery->discover($server);
-            $msg = "Найдено баз: {$result['found']}";
-            if (($result['scanned'] ?? 0) > 0) {
-                $msg .= " (просмотрено конфигов: {$result['scanned']}";
-                if ($result['skipped']) {
-                    $msg .= ", не разобрано: {$result['skipped']}";
-                }
-                $msg .= ')';
-            } elseif ($server->isVps()) {
-                $msg .= '. На VPS ничего не найдено — проверьте, что SSH-пользователь читает /var/www и /home (часто нужен root или www-data в группе).';
-            }
-
-            return back()->with('success', $msg);
-        } catch (\Throwable $e) {
-            return back()->with('error', $e->getMessage());
-        }
-    }
-
-    public function finishContent(Request $request, Server $server): RedirectResponse
-    {
-        $data = $request->validate([
-            'databases' => ['nullable', 'array'],
-            'databases.*.enabled' => ['nullable'],
-        ]);
-
-        $server->syncFullBackupPath();
-
-        $server->load('databases');
-        foreach ($server->databases as $db) {
-            $enabled = isset(($data['databases'][$db->id] ?? [])['enabled']);
-            $db->update(['is_enabled' => $enabled]);
-        }
-
-        $server->update(['setup_step' => Server::STEP_COMPLETE]);
-
-        return redirect()->route('servers.show', $server)
-            ->with('success', 'Настройка завершена. Можно запускать бэкап.');
     }
 }

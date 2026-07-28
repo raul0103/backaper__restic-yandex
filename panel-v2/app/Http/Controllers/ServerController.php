@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Server;
-use App\Services\BackupOrchestrator;
 use App\Services\RemoteSetupService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -14,9 +13,7 @@ class ServerController extends Controller
     public function index(): View
     {
         return view('servers.index', [
-            'servers' => Server::withCount(['backupPaths', 'databases'])
-                ->latest()
-                ->get(),
+            'servers' => Server::query()->latest()->get(),
         ]);
     }
 
@@ -60,20 +57,14 @@ class ServerController extends Controller
 
         return redirect()
             ->route('servers.wizard.install', $server)
-            ->with('success', 'Сервер добавлен. Теперь установите программу бэкапа на сервер.');
+            ->with('success', 'Сервер добавлен. Теперь установите restic на сервер.');
     }
 
     public function show(Server $server): View|RedirectResponse
     {
         if (! $server->isWizardComplete()) {
-            return redirect()->route($server->wizardRoute());
+            return redirect()->route($server->wizardRoute(), $server);
         }
-
-        $server->load([
-            'backupPaths',
-            'databases',
-            'backupRuns' => fn ($q) => $q->latest()->limit(20),
-        ]);
 
         return view('servers.show', compact('server'));
     }
@@ -85,7 +76,7 @@ class ServerController extends Controller
                 ->with('error', 'Сначала установите restic на сервере.');
         }
 
-        $server->load(['backupPaths', 'databases']);
+        $server->load('backupPaths');
 
         return view('servers.restore', compact('server'));
     }
@@ -136,6 +127,7 @@ class ServerController extends Controller
         if ($cloudChanged) {
             $payload['is_setup_complete'] = false;
             $payload['setup_log'] = null;
+            $payload['setup_step'] = Server::STEP_INSTALL;
         }
 
         $server->update($payload);
@@ -143,8 +135,8 @@ class ServerController extends Controller
 
         if ($cloudChanged) {
             return redirect()
-                ->route('servers.show', $server)
-                ->with('warning', 'Изменены данные облака/пароля. Нужно переустановить restic на сервере — иначе бэкап не заработает.');
+                ->route('servers.wizard.install', $server)
+                ->with('warning', 'Изменены данные облака/пароля. Нужно переустановить restic на сервере.');
         }
 
         return redirect()->route('servers.show', $server)->with('success', 'Сохранено.');
@@ -162,28 +154,12 @@ class ServerController extends Controller
         try {
             $log = $setup->setup($server);
             if ($server->fresh()->is_setup_complete) {
-                return back()->with('success', 'restic переустановлен: конфиг и репозиторий на Яндекс.Диске готовы.');
+                $server->update(['setup_step' => Server::STEP_COMPLETE]);
+
+                return back()->with('success', 'restic переустановлен: конфиг, репозиторий и CLI-скрипты готовы.');
             }
 
             return back()->with('error', 'Установка не завершилась.'.$this->shortLog($log));
-        } catch (\Throwable $e) {
-            return back()->with('error', $e->getMessage());
-        }
-    }
-
-    public function backup(Server $server, Request $request, BackupOrchestrator $orchestrator): RedirectResponse
-    {
-        $mode = (string) $request->input('mode', 'databases');
-        $options = match ($mode) {
-            'files' => ['files' => true, 'databases' => false],
-            'all' => ['files' => true, 'databases' => true],
-            default => ['files' => false, 'databases' => true],
-        };
-
-        try {
-            $run = $orchestrator->startServerBackup($server, $options);
-
-            return redirect()->route('backup-runs.show', $run);
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
         }

@@ -7,12 +7,12 @@
 
 <div class="mb-8">
     <h1 class="page-title">Шаг 2 — Установка</h1>
-    <p class="page-subtitle">Поставим на сервер программы для шифрования и загрузки на Яндекс.Диск.</p>
+    <p class="page-subtitle">Поставим на сервер restic, rclone и скрипты бэкапа. Дальше всё запускается по SSH.</p>
 </div>
 
 <div class="help-box mb-6">
     <strong>Что произойдёт:</strong> по SSH обновятся restic и rclone, заново создастся репозиторий на Яндекс.Диске
-    (<code>restic-repo/…</code> и папка <code>backaper/…</code>).
+    (<code>restic-repo/…</code> и папка <code>databases/…</code>), зальются CLI-скрипты.
     Нужно, если удалили эти папки на Диске или сменили пароль / токен / имя папки.
 </div>
 
@@ -33,7 +33,7 @@
         </button>
         <a href="{{ route('servers.wizard.connect', $server) }}" class="btn btn-secondary">← Назад</a>
         @if ($server->is_setup_complete)
-            <a href="{{ route('servers.wizard.content', $server) }}" class="btn btn-secondary">Далее →</a>
+            <a href="{{ route('servers.show', $server) }}" class="btn btn-secondary">К серверу →</a>
         @endif
     </form>
 

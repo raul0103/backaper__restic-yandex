@@ -7,37 +7,39 @@ use phpseclib3\Crypt\PublicKeyLoader;
 use phpseclib3\Net\SFTP;
 use phpseclib3\Net\SSH2;
 use RuntimeException;
+use Throwable;
 
 class SshService
 {
     /** @var array<int, string> */
     private array $homeDirCache = [];
 
+    /** @var array<int, SFTP> */
+    private array $sftpCache = [];
+
     public function connect(Server $server): SSH2
     {
-        $ssh = new SSH2($server->host, $server->ssh_port);
-        $ssh->setTimeout(300);
-        $this->login($ssh, $server);
-
-        return $ssh;
+        return $this->sftp($server);
     }
 
     public function sftp(Server $server): SFTP
     {
-        $sftp = new SFTP($server->host, $server->ssh_port);
-        $sftp->setTimeout(300);
-        $this->login($sftp, $server);
+        $id = (int) $server->id;
+        if (isset($this->sftpCache[$id]) && $this->sftpCache[$id]->isConnected()) {
+            return $this->sftpCache[$id];
+        }
 
-        return $sftp;
+        $this->sftpCache[$id] = $this->openSftp($server);
+
+        return $this->sftpCache[$id];
     }
 
     public function exec(Server $server, string $command, int $timeout = 300): string
     {
-        $ssh = new SSH2($server->host, $server->ssh_port);
-        $ssh->setTimeout($timeout);
-        $this->login($ssh, $server);
+        $sftp = $this->sftp($server);
+        $sftp->setTimeout($timeout);
 
-        $output = $ssh->exec($command);
+        $output = $sftp->exec($command);
 
         if ($output === false) {
             throw new RuntimeException('SSH command returned no output');
@@ -48,29 +50,46 @@ class SshService
 
     public function homeDir(Server $server): string
     {
-        if (! isset($this->homeDirCache[$server->id])) {
-            $this->homeDirCache[$server->id] = $this->exec($server, 'printf %s "$HOME"');
+        $id = (int) $server->id;
+        if (! isset($this->homeDirCache[$id])) {
+            $this->homeDirCache[$id] = $this->exec($server, 'printf %s "$HOME"', 30);
         }
 
-        return $this->homeDirCache[$server->id];
+        return $this->homeDirCache[$id];
     }
 
     public function upload(Server $server, string $remotePath, string $contents): void
     {
-        $remotePath = $this->expandPath($server, $remotePath);
-        // PHP на Windows может отдать CRLF — bash на Linux из‑за этого падает
-        if (str_ends_with($remotePath, '.sh') || str_ends_with($remotePath, '.env') || str_ends_with($remotePath, '.bash')) {
-            $contents = str_replace(["\r\n", "\r"], "\n", $contents);
+        $this->uploadMany($server, [$remotePath => $contents]);
+    }
+
+    /**
+     * Несколько файлов по одному SFTP-соединению (Beget рвёт частые новые SSH).
+     *
+     * @param  array<string, string>  $files  remotePath => contents
+     */
+    public function uploadMany(Server $server, array $files): void
+    {
+        if ($files === []) {
+            return;
         }
+
         $sftp = $this->sftp($server);
-        $dir = dirname($remotePath);
 
-        if (! $sftp->is_dir($dir)) {
-            $this->mkdirRecursive($sftp, $dir);
-        }
+        foreach ($files as $remotePath => $contents) {
+            $path = $this->expandPath($server, $remotePath);
+            if (str_ends_with($path, '.sh') || str_ends_with($path, '.env') || str_ends_with($path, '.bash')) {
+                $contents = str_replace(["\r\n", "\r"], "\n", $contents);
+            }
 
-        if (! $sftp->put($remotePath, $contents)) {
-            throw new RuntimeException("Failed to upload {$remotePath}");
+            $dir = dirname($path);
+            if (! $sftp->is_dir($dir)) {
+                $this->mkdirRecursive($sftp, $dir);
+            }
+
+            if (! $sftp->put($path, $contents)) {
+                throw new RuntimeException("Failed to upload {$path}");
+            }
         }
     }
 
@@ -87,10 +106,8 @@ class SshService
     }
 
     /**
-     * Читает несколько файлов по одному SFTP-соединению (без повторных SSH-логинов).
-     *
      * @param  list<string>  $remotePaths
-     * @return array<string, string> path => contents (только успешно прочитанные)
+     * @return array<string, string>
      */
     public function readMany(Server $server, array $remotePaths): array
     {
@@ -110,6 +127,45 @@ class SshService
         }
 
         return $out;
+    }
+
+    /** Сбросить кэш соединения (после долгого простоя / обрыва). */
+    public function disconnect(Server $server): void
+    {
+        $id = (int) $server->id;
+        if (isset($this->sftpCache[$id])) {
+            try {
+                $this->sftpCache[$id]->disconnect();
+            } catch (Throwable) {
+            }
+            unset($this->sftpCache[$id]);
+        }
+    }
+
+    private function openSftp(Server $server): SFTP
+    {
+        $last = null;
+        for ($attempt = 1; $attempt <= 4; $attempt++) {
+            try {
+                $sftp = new SFTP($server->host, (int) $server->ssh_port);
+                $sftp->setTimeout(300);
+                $this->login($sftp, $server);
+
+                return $sftp;
+            } catch (Throwable $e) {
+                $last = $e;
+                $msg = $e->getMessage();
+                $refused = str_contains($msg, '10061')
+                    || str_contains($msg, 'Connection refused')
+                    || str_contains($msg, 'отверг запрос');
+                if (! $refused || $attempt === 4) {
+                    throw $e;
+                }
+                usleep(750_000 * $attempt);
+            }
+        }
+
+        throw $last ?? new RuntimeException('SSH connect failed');
     }
 
     private function expandPath(Server $server, string $remotePath): string

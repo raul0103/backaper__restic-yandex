@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Backaper v2:
 #   1) restic — полный бэкап указанных путей (с исключениями)
-#   2) rclone — отдельные дампы БД в {cloud}/databases/{db}/{date}.sql.gz
+#   2) rclone — отдельные дампы БД в {cloud}/{db}/{date}.sql.gz
 set -euo pipefail
 
 BACKAPER_ROOT="${BACKAPER_ROOT:-$HOME/backaper}"
@@ -213,7 +213,7 @@ if [[ "$DO_DBS" == "1" ]]; then
 
     dump_sql="${TMP_DIR}/${db_slug}.sql"
     dump_gz="${dump_sql}.gz"
-    log "mysqldump → ${RCLONE_REMOTE}:${CLOUD_PREFIX}/databases/${db_slug}/${TIMESTAMP}.sql.gz"
+    log "mysqldump → ${RCLONE_REMOTE}:${CLOUD_PREFIX}/${db_slug}/${TIMESTAMP}.sql.gz"
 
     if ! run_timeout 1800 "${dump_bin[@]}" "${mysql_args[@]}" \
       --single-transaction --routines --triggers --max-allowed-packet=512M \
@@ -225,7 +225,7 @@ if [[ "$DO_DBS" == "1" ]]; then
 
     gzip -cf "$dump_sql" > "$dump_gz"
     log_size "db" "$db_slug" "$dump_gz" "no"
-    if ! run_timeout 1800 rclone copyto "$dump_gz" "${RCLONE_REMOTE}:${CLOUD_PREFIX}/databases/${db_slug}/${TIMESTAMP}.sql.gz"; then
+    if ! run_timeout 1800 rclone copyto "$dump_gz" "${RCLONE_REMOTE}:${CLOUD_PREFIX}/${db_slug}/${TIMESTAMP}.sql.gz"; then
       log "ERROR: rclone upload failed for ${label} — skip"
       rm -f "$dump_sql" "$dump_gz"
       continue

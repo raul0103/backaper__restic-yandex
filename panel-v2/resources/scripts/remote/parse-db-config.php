@@ -2,6 +2,8 @@
 <?php
 /**
  * CLI helper: parse MODX / WordPress / Laravel DB credentials from a config file.
+ * Compatible with PHP 5.6+ (Beget CLI default).
+ *
  * Usage: php parse-db-config.php /path/to/config.inc.php
  * Output (TSV): host\tname\tuser\tpassword\tsource\tlabel
  */
@@ -19,7 +21,7 @@ if ($c === false || $c === '') {
 
 $base = basename($path);
 
-function php_var(string $c, string $n): ?string
+function php_var($c, $n)
 {
     if (preg_match('/\$'.preg_quote($n, '/')."\s*=\s*['\"]([^'\"]*)['\"]\s*;/", $c, $m)) {
         return $m[1];
@@ -28,8 +30,9 @@ function php_var(string $c, string $n): ?string
     return null;
 }
 
-function def_const(string $c, string $n): ?string
+function def_const($c, $n)
 {
+    // define('DB_NAME', 'x') or define( 'DB_NAME' , "x" )
     if (preg_match("/define\s*\(\s*['\"]".preg_quote($n, '/')."['\"]\s*,\s*['\"]([^'\"]*)['\"]\s*\)/", $c, $m)) {
         return $m[1];
     }
@@ -37,52 +40,82 @@ function def_const(string $c, string $n): ?string
     return null;
 }
 
-function env_val(string $c, string $n): ?string
+function env_val($c, $n)
 {
     if (! preg_match('/^'.preg_quote($n, '/').'\s*=\s*(.*)$/m', $c, $m)) {
         return null;
     }
     $v = trim($m[1]);
-    if ((str_starts_with($v, '"') && str_ends_with($v, '"'))
-        || (str_starts_with($v, "'") && str_ends_with($v, "'"))) {
-        $v = substr($v, 1, -1);
+    $len = strlen($v);
+    if ($len >= 2) {
+        $q = $v[0];
+        if (($q === '"' || $q === "'") && substr($v, -1) === $q) {
+            $v = substr($v, 1, -1);
+        }
     }
 
     return $v;
 }
 
-/** @param list<string> $strip */
-function label_from(string $path, array $strip): string
+function label_from($path, $strip)
 {
     $parts = array_values(array_filter(explode('/', str_replace('\\', '/', $path))));
-    $parts = array_values(array_filter($parts, fn ($p) => ! in_array($p, $strip, true)));
+    $out = array();
+    foreach ($parts as $p) {
+        if (! in_array($p, $strip, true)) {
+            $out[] = $p;
+        }
+    }
 
-    return $parts !== [] ? (string) end($parts) : basename(dirname($path));
+    return $out !== array() ? (string) end($out) : basename(dirname($path));
 }
 
-$host = $name = $user = $pass = $source = $label = null;
+$host = null;
+$name = null;
+$user = null;
+$pass = null;
+$source = null;
+$label = null;
 
 if ($base === 'config.inc.php') {
     $name = php_var($c, 'dbase');
     $user = php_var($c, 'database_user');
-    $host = php_var($c, 'database_server') ?: 'localhost';
-    $pass = php_var($c, 'database_password') ?? '';
+    $host = php_var($c, 'database_server');
+    if ($host === null || $host === '') {
+        $host = 'localhost';
+    }
+    $pass = php_var($c, 'database_password');
+    if ($pass === null) {
+        $pass = '';
+    }
     $source = 'modx';
-    $label = label_from($path, ['public_html', 'core', 'config']);
+    $label = label_from($path, array('public_html', 'core', 'config'));
 } elseif ($base === 'wp-config.php') {
     $name = def_const($c, 'DB_NAME');
     $user = def_const($c, 'DB_USER');
-    $host = def_const($c, 'DB_HOST') ?: 'localhost';
-    $pass = def_const($c, 'DB_PASSWORD') ?? '';
+    $host = def_const($c, 'DB_HOST');
+    if ($host === null || $host === '') {
+        $host = 'localhost';
+    }
+    $pass = def_const($c, 'DB_PASSWORD');
+    if ($pass === null) {
+        $pass = '';
+    }
     $source = 'wordpress';
-    $label = label_from($path, ['public_html', 'wp-config.php']);
+    $label = label_from($path, array('public_html', 'wp-config.php'));
 } elseif ($base === '.env') {
     $name = env_val($c, 'DB_DATABASE');
     $user = env_val($c, 'DB_USERNAME');
-    $host = env_val($c, 'DB_HOST') ?: 'localhost';
-    $pass = env_val($c, 'DB_PASSWORD') ?? '';
+    $host = env_val($c, 'DB_HOST');
+    if ($host === null || $host === '') {
+        $host = 'localhost';
+    }
+    $pass = env_val($c, 'DB_PASSWORD');
+    if ($pass === null) {
+        $pass = '';
+    }
     $source = 'laravel';
-    $label = label_from($path, ['.env', 'public_html', 'current']);
+    $label = label_from($path, array('.env', 'public_html', 'current'));
     if ($name === null || $name === '') {
         fwrite(STDERR, "no DB_DATABASE\n");
         exit(1);
@@ -97,4 +130,4 @@ if ($name === null || $user === null) {
     exit(1);
 }
 
-echo implode("\t", [$host, $name, $user, $pass, $source, $label]), "\n";
+echo implode("\t", array($host, $name, $user, $pass, $source, $label)), "\n";

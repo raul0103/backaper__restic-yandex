@@ -2,7 +2,6 @@
     $steps = [
         1 => ['label' => 'Подключение', 'route' => 'servers.wizard.connect'],
         2 => ['label' => 'Установка', 'route' => 'servers.wizard.install'],
-        3 => ['label' => 'Базы данных', 'route' => 'servers.wizard.content'],
     ];
 @endphp
 <div class="flex flex-wrap gap-2 mb-8">

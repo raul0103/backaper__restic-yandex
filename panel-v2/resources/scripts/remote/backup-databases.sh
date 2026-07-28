@@ -107,7 +107,7 @@ else
   DUMP_BIN=(mysqldump)
 fi
 
-log "cloud: ${RCLONE_REMOTE}:${CLOUD_PREFIX}/databases/"
+log "cloud: ${RCLONE_REMOTE}:${CLOUD_PREFIX}/"
 log "поиск конфигов…"
 mapfile -t CONFIGS < <(find_configs)
 log "найдено конфигов: ${#CONFIGS[@]}"
@@ -124,8 +124,10 @@ fail=0
 for cfg in "${CONFIGS[@]}"; do
   [[ -z "$cfg" || ! -f "$cfg" ]] && continue
   parsed=""
-  if ! parsed="$(php "$PARSER" "$cfg" 2>/dev/null)"; then
-    log "SKIP parse: $cfg"
+  parse_err=""
+  if ! parsed="$(php "$PARSER" "$cfg" 2>"$TMP_DIR/parse.err")"; then
+    parse_err="$(tr '\n' ' ' <"$TMP_DIR/parse.err" | head -c 160)"
+    log "SKIP parse: $cfg${parse_err:+ ($parse_err)}"
     ((fail++)) || true
     continue
   fi
@@ -143,17 +145,18 @@ for cfg in "${CONFIGS[@]}"; do
   dump_sql="${TMP_DIR}/${db_slug}.sql"
   dump_gz="${dump_sql}.gz"
 
-  if ! "${DUMP_BIN[@]}" -h "$db_host" -u "$db_user" --password="$db_pass" --connect-timeout=10 \
+  if ! "${DUMP_BIN[@]}" -h "$db_host" -u "$db_user" --password="$db_pass" \
     --single-transaction --routines --triggers --max-allowed-packet=512M \
-    "$db_name" > "$dump_sql" 2>/dev/null; then
-    log "ERROR mysqldump: ${db_name}"
+    "$db_name" > "$dump_sql" 2>"$TMP_DIR/dump.err"; then
+    dump_err="$(grep -v 'Using a password' "$TMP_DIR/dump.err" | tr '\n' ' ' | head -c 200)"
+    log "ERROR mysqldump: ${db_name}${dump_err:+ ($dump_err)}"
     rm -f "$dump_sql"
     ((fail++)) || true
     continue
   fi
 
   gzip -cf "$dump_sql" > "$dump_gz"
-  dest="${RCLONE_REMOTE}:${CLOUD_PREFIX}/databases/${db_slug}/${TIMESTAMP}.sql.gz"
+  dest="${RCLONE_REMOTE}:${CLOUD_PREFIX}/${db_slug}/${TIMESTAMP}.sql.gz"
   if ! rclone copyto "$dump_gz" "$dest"; then
     log "ERROR rclone: ${db_name}"
     rm -f "$dump_sql" "$dump_gz"

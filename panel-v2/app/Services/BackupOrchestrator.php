@@ -122,6 +122,9 @@ class BackupOrchestrator
 
     private function assertReady(Server $server, bool $doFiles = true, bool $doDatabases = true): void
     {
+        if ($server->isHosting()) {
+            throw new RuntimeException('На хостинге бэкап только через CLI на сервере.');
+        }
         if (! $server->readyForRemoteSetup()) {
             throw new RuntimeException('Сначала укажите SSH и токен Яндекс.Диска.');
         }

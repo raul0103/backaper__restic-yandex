@@ -52,17 +52,19 @@ class RemoteSetupService
             'parse-db-config.php',
             'test-full-home-backup.sh',
         ];
+        $files = [];
         $chmod = [];
         foreach ($names as $name) {
             $local = resource_path('scripts/remote/'.$name);
             if (! is_file($local)) {
                 continue;
             }
-            $this->ssh->upload($server, '~/backaper/scripts/'.$name, file_get_contents($local));
+            $files['~/backaper/scripts/'.$name] = file_get_contents($local);
             if (str_ends_with($name, '.sh')) {
                 $chmod[] = '~/backaper/scripts/'.$name;
             }
         }
+        $this->ssh->uploadMany($server, $files);
         if ($chmod !== []) {
             $this->ssh->exec($server, 'chmod +x '.implode(' ', $chmod));
         }

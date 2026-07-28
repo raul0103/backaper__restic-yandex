@@ -15,9 +15,11 @@ class Server extends Model
 
     public const STEP_INSTALL = 2;
 
-    public const STEP_CONTENT = 3;
+    /** После установки restic — настройка завершена (бэкапы только CLI). */
+    public const STEP_COMPLETE = 3;
 
-    public const STEP_COMPLETE = 4;
+    /** @deprecated legacy wizard step; treated as complete */
+    public const STEP_CONTENT = 3;
 
     public const DEFAULT_RESTIC_PASSWORD = 'backaper658715';
 
@@ -144,16 +146,14 @@ class Server extends Model
 
     public function isWizardComplete(): bool
     {
-        return $this->setup_step >= self::STEP_COMPLETE;
+        return $this->is_setup_complete || $this->setup_step >= self::STEP_COMPLETE;
     }
 
     public function wizardRoute(): string
     {
-        return match (max(1, min(3, $this->setup_step))) {
-            1 => 'servers.wizard.connect',
-            2 => 'servers.wizard.install',
-            default => 'servers.wizard.content',
-        };
+        return $this->setup_step <= self::STEP_CONNECT
+            ? 'servers.wizard.connect'
+            : 'servers.wizard.install';
     }
 
     public function resticRepository(): string
@@ -163,7 +163,7 @@ class Server extends Model
 
     public function cloudPrefix(): string
     {
-        return 'backaper/'.$this->repoSlug();
+        return 'databases/'.$this->repoSlug();
     }
 
     public function repoSlug(): string
@@ -189,14 +189,7 @@ class Server extends Model
 
     public function readyForBackup(): bool
     {
-        if (! $this->is_setup_complete) {
-            return false;
-        }
-
-        $hasPaths = $this->backupPaths()->where('is_enabled', true)->exists();
-        $hasDbs = $this->databases()->where('is_enabled', true)->exists();
-
-        return $hasPaths || $hasDbs;
+        return $this->is_setup_complete;
     }
 
     public function storageSlug(string $name): string

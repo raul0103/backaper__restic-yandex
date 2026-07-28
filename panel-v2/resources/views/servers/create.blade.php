@@ -5,7 +5,7 @@
 @section('content')
 <div class="mb-8">
     <h1 class="page-title">Добавить сервер</h1>
-    <p class="page-subtitle">VPS или хостинг — бэкап файлов целиком и отдельные дампы баз на Яндекс.Диск.</p>
+    <p class="page-subtitle">VPS или хостинг — панель настроит restic, бэкапы запускаете по SSH.</p>
 </div>
 
 <div class="help-box mb-6">

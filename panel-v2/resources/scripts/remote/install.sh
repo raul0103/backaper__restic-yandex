@@ -4,7 +4,7 @@
 #   env BACKAPER_RCLONE_REMOTE=yandex \
 #       BACKAPER_RESTIC_PASSWORD='secret' \
 #       BACKAPER_RESTIC_REPOSITORY='rclone:yandex:restic-repo/my-server' \
-#       BACKAPER_CLOUD_PREFIX='backaper/my-server' \
+#       BACKAPER_CLOUD_PREFIX='databases/my-server' \
 #       bash install.sh
 set -euo pipefail
 
