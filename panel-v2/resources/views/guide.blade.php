@@ -50,10 +50,19 @@
 
     <section class="card p-6">
         <h2 class="section-title">После настройки — CLI</h2>
-        <pre class="code-block text-xs mb-3">source ~/backaper/backaper.env
+        <pre class="code-block text-xs mb-3">screen -S backup-files
+source ~/backaper/backaper.env
 bash ~/backaper/scripts/backup-files.sh
+
+screen -S backup-db
+source ~/backaper/backaper.env
 bash ~/backaper/scripts/backup-databases.sh</pre>
-        <p class="text-sm text-slate-600">Подробные команды — на странице сервера. Восстановление — кнопка «Восстановление».</p>
+        <p class="text-sm text-slate-600 mb-3">Прогресс смотрите в том же окне screen. Подробности и команды screen — на странице сервера.</p>
+        <ul class="text-sm text-slate-600 space-y-1 list-disc pl-5">
+            <li>Отсоединиться: <code class="text-xs bg-slate-100 px-1 rounded">Ctrl+A</code>, затем <code class="text-xs bg-slate-100 px-1 rounded">D</code></li>
+            <li>Вернуться: <code class="text-xs bg-slate-100 px-1 rounded">screen -r backup-files</code></li>
+            <li>Уже внутри сессии? <code class="text-xs bg-slate-100 px-1 rounded">echo $STY</code> — не вызывайте снова <code class="text-xs bg-slate-100 px-1 rounded">screen -r</code></li>
+        </ul>
     </section>
 
     <section class="card p-6">
