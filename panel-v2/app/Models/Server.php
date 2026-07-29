@@ -129,6 +129,11 @@ class Server extends Model
         return $this->hasMany(BackupRun::class);
     }
 
+    public function batchItems(): HasMany
+    {
+        return $this->hasMany(BackupBatchItem::class);
+    }
+
     public function isVps(): bool
     {
         return $this->kind === self::KIND_VPS;

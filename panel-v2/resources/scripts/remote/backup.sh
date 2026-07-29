@@ -189,11 +189,23 @@ else
   log "Файлы пропущены (backup_files=false)"
 fi
 
-# --- 2) Отдельные дампы БД (из манифеста панели) ---
+# --- 2) Отдельные дампы БД (из манифеста панели или discovery) ---
 if [[ "$DO_DBS" == "1" ]]; then
   if [[ "$db_count" -eq 0 ]]; then
-    log "WARN: backup_databases=true, но databases пуст — пропуск дампов"
-  fi
+    log "databases пуст — поиск конфигов через backup-databases.sh"
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [[ -f "$SCRIPT_DIR/backup-databases.sh" ]]; then
+      set +e
+      bash "$SCRIPT_DIR/backup-databases.sh"
+      db_ec=$?
+      set -e
+      if [[ "$db_ec" -ne 0 ]]; then
+        log "WARN: backup-databases.sh exit ${db_ec}"
+      fi
+    else
+      log "WARN: backup-databases.sh не найден — дампы пропущены"
+    fi
+  else
   for i in $(seq 0 $((db_count - 1))); do
     label="$(jq -r ".databases[$i].label // .databases[$i].name" "$MANIFEST_FILE")"
     db_host="$(jq -r ".databases[$i].host" "$MANIFEST_FILE")"
@@ -234,6 +246,7 @@ if [[ "$DO_DBS" == "1" ]]; then
     rm -f "$dump_sql" "$dump_gz"
     log "OK db: ${label}"
   done
+  fi
 else
   log "Базы пропущены (backup_databases=false)"
 fi

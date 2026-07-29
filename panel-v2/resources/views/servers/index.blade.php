@@ -6,9 +6,12 @@
 <div class="flex items-center justify-between mb-8">
     <div>
         <h1 class="page-title">Серверы</h1>
-        <p class="page-subtitle">SSH + restic; бэкапы — по CLI</p>
+        <p class="page-subtitle">SSH + restic; массовый бэкап — по очереди</p>
     </div>
-    <a href="{{ route('servers.create') }}" class="btn btn-primary">+ Сервер</a>
+    <div class="flex gap-2">
+        <a href="{{ route('backup-batches.create') }}" class="btn btn-secondary">Массовый бэкап</a>
+        <a href="{{ route('servers.create') }}" class="btn btn-primary">+ Сервер</a>
+    </div>
 </div>
 
 @forelse ($servers as $server)

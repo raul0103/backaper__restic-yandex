@@ -8,21 +8,31 @@ use Illuminate\Console\Command;
 
 class BackupRemoteCommand extends Command
 {
-    protected $signature = 'backaper:backup {server? : ID сервера} {--all : Бэкап всех готовых серверов} {--files : Только файлы} {--databases : Только дампы БД}';
+    protected $signature = 'backaper:backup
+        {server? : ID сервера}
+        {--all : Бэкап всех готовых серверов по очереди}
+        {--files : Только файлы}
+        {--databases : Только дампы БД}
+        {--poll=900 : Секунд между SSH-проверками завершения (по умолчанию 15 мин)}';
 
-    protected $description = 'По SSH: restic (файлы) и/или rclone дампы БД';
+    protected $description = 'По SSH: restic (файлы) и/или rclone дампы БД (последовательно, без параллели)';
 
     public function handle(BackupOrchestrator $orchestrator): int
     {
         $options = $this->modeOptions();
+        $poll = max(60, (int) $this->option('poll'));
 
         if ($this->option('all')) {
             $servers = Server::query()->get()->filter(fn (Server $s) => $s->readyForBackup());
+            $i = 0;
+            $total = $servers->count();
             foreach ($servers as $server) {
-                $this->info("Backup: {$server->name}");
+                $i++;
+                $this->info("[{$i}/{$total}] Backup: {$server->name}");
                 $run = $orchestrator->startServerBackup($server, $options);
                 if ($run->isRunning()) {
-                    $run = $orchestrator->waitForBackup($run);
+                    $this->line("  ждём завершения (опрос каждые {$poll} с)…");
+                    $run = $orchestrator->waitForBackup($run, $poll);
                 }
                 $this->line("  status: {$run->status}");
             }
@@ -37,8 +47,8 @@ class BackupRemoteCommand extends Command
 
         $run = $orchestrator->startServerBackup($server, $options);
         if ($run->isRunning()) {
-            $this->info('Backup started on server, waiting…');
-            $run = $orchestrator->waitForBackup($run);
+            $this->info("Backup started on server, waiting (poll {$poll}s)…");
+            $run = $orchestrator->waitForBackup($run, $poll);
         }
         $this->line($run->log);
         $this->info("Status: {$run->status}");

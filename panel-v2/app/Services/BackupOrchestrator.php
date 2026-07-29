@@ -55,8 +55,11 @@ class BackupOrchestrator
     public function waitForBackup(BackupRun $run, int $pollSeconds = 5): BackupRun
     {
         while ($run->fresh()->isRunning()) {
-            sleep($pollSeconds);
             $this->advanceBackup($run->fresh());
+            if (! $run->fresh()->isRunning()) {
+                break;
+            }
+            sleep($pollSeconds);
         }
 
         return $run->fresh();
@@ -122,9 +125,6 @@ class BackupOrchestrator
 
     private function assertReady(Server $server, bool $doFiles = true, bool $doDatabases = true): void
     {
-        if ($server->isHosting()) {
-            throw new RuntimeException('На хостинге бэкап только через CLI на сервере.');
-        }
         if (! $server->readyForRemoteSetup()) {
             throw new RuntimeException('Сначала укажите SSH и токен Яндекс.Диска.');
         }
@@ -137,9 +137,7 @@ class BackupOrchestrator
         if ($doFiles && ! $server->backupPaths()->where('is_enabled', true)->exists()) {
             throw new RuntimeException('Нет пути для бэкапа файлов.');
         }
-        if ($doDatabases && ! $server->databases()->where('is_enabled', true)->exists()) {
-            throw new RuntimeException('Нет включённых баз. Откройте «Базы данных» → «Найти базы», либо дамп через CLI (поиск на лету).');
-        }
+        // Базы: либо из манифеста панели, либо discovery на сервере (backup-databases.sh).
     }
 
     private function remoteBaseDir(BackupRun $run, Server $server): string
