@@ -14,11 +14,12 @@ trap cleanup EXIT
 
 log() {
   local msg="[backup] $(date -Is) $*"
-  # В файл — сразу (панель читает run.log; stdout в screen часто буферизуется)
+  # В файл — сразу (панель читает run.log). Не дублируем в stdout, если лог уже туда же редиректится.
   if [[ -n "${BACKAPER_RUN_LOG:-}" ]]; then
     printf '%s\n' "$msg" >> "$BACKAPER_RUN_LOG" || true
+  else
+    printf '%s\n' "$msg"
   fi
-  printf '%s\n' "$msg"
 }
 
 # Построчный вывод restic в run.log (прогресс с \r тоже фиксируем как строки)
@@ -31,8 +32,9 @@ restic_run() {
       [[ -z "$line" ]] && continue
       if [[ -n "${BACKAPER_RUN_LOG:-}" ]]; then
         printf '%s\n' "$line" >> "$BACKAPER_RUN_LOG" || true
+      else
+        printf '%s\n' "$line"
       fi
-      printf '%s\n' "$line"
     done
     ec=${PIPESTATUS[0]}
   else
