@@ -28,12 +28,13 @@
         .card-hover { transition: border-color .15s, box-shadow .15s; }
         .card-hover:hover { border-color:#99f6e4; box-shadow:0 4px 16px rgba(13,148,136,.08); }
         .label { display:block; font-size:.875rem; font-weight:500; color:#475569; margin-bottom:.375rem; }
-        .input, .textarea { width:100%; border:1px solid #cbd5e1; border-radius:10px; padding:.625rem .875rem; background:#fff; color:#0f172a; font-size:.9375rem; }
-        .input:focus, .textarea:focus { outline:none; border-color:#14b8a6; box-shadow:0 0 0 3px rgba(20,184,166,.15); }
+        .input, .textarea, .select { width:100%; border:1px solid #cbd5e1; border-radius:10px; padding:.625rem .875rem; background:#fff; color:#0f172a; font-size:.9375rem; }
+        .input:focus, .textarea:focus, .select:focus { outline:none; border-color:#14b8a6; box-shadow:0 0 0 3px rgba(20,184,166,.15); }
         .textarea { resize:vertical; min-height:80px; }
         .btn { display:inline-flex; align-items:center; justify-content:center; gap:.375rem; border-radius:10px; padding:.5rem 1rem; font-size:.875rem; font-weight:600; transition:all .15s; cursor:pointer; border:none; text-decoration:none; }
-        .btn-primary { background:#0d9488; color:#fff; } .btn-primary:hover { background:#0f766e; }
-        .btn-secondary { background:#fff; color:#334155; border:1px solid #cbd5e1; } .btn-secondary:hover { background:#f8fafc; }
+        .btn:disabled { opacity:.5; cursor:not-allowed; }
+        .btn-primary { background:#0d9488; color:#fff; } .btn-primary:hover:not(:disabled) { background:#0f766e; }
+        .btn-secondary { background:#fff; color:#334155; border:1px solid #cbd5e1; } .btn-secondary:hover:not(:disabled) { background:#f8fafc; }
         .btn-ghost { background:transparent; color:#0d9488; padding:.25rem .5rem; font-weight:500; }
         .btn-danger { background:transparent; color:#dc2626; font-weight:500; font-size:.875rem; }
         .alert { border-radius:12px; padding:.875rem 1rem; margin-bottom:1.5rem; font-size:.9375rem; }
@@ -46,7 +47,7 @@
         .badge-info { background:#dbeafe; color:#1d4ed8; }
         .section-title { font-size:1.125rem; font-weight:600; color:#0f172a; margin-bottom:1rem; }
         .code-block { background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:.875rem 1rem; font-family:ui-monospace,monospace; font-size:.8125rem; color:#334155; overflow-x:auto; white-space:pre-wrap; word-break:break-all; }
-        .nav-link { color:#64748b; font-size:.875rem; font-weight:500; padding:.375rem .75rem; border-radius:8px; }
+        .nav-link { color:#64748b; font-size:.8125rem; font-weight:500; padding:.4rem .7rem; border-radius:8px; text-decoration:none; white-space:nowrap; }
         .nav-link:hover { color:#0d9488; background:#f0fdfa; }
         .nav-link-active { color:#0d9488; background:#ccfbf1; }
         .step-pill { display:inline-flex; align-items:center; gap:.5rem; padding:.375rem .875rem; border-radius:9999px; font-size:.8125rem; font-weight:600; border:1px solid #e2e8f0; color:#94a3b8; background:#fff; text-decoration:none; }
@@ -55,27 +56,64 @@
         .log-block { background:#1e293b; color:#e2e8f0; border-radius:12px; padding:1rem 1.25rem; font-family:ui-monospace,monospace; font-size:.8125rem; line-height:1.6; overflow-x:auto; white-space:pre-wrap; }
         .help-box { background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:1rem 1.25rem; font-size:.875rem; color:#475569; }
         .help-box strong { color:#0f172a; }
+        .nav-map { display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; font-size:.75rem; color:#94a3b8; margin-bottom:1.5rem; }
+        .nav-map a { color:#0f766e; text-decoration:none; font-weight:500; }
+        .nav-map a:hover { text-decoration:underline; }
+        .nav-map .sep { color:#cbd5e1; }
+        .queue-bar { position:sticky; bottom:0; z-index:20; background:rgba(255,255,255,.96); backdrop-filter:blur(8px); border-top:1px solid #e2e8f0; box-shadow:0 -8px 24px rgba(15,23,42,.06); }
+        .server-row.selected { border-color:#5eead4; background:#f0fdfa; }
+        @media (max-width: 768px) {
+            .nav-desktop { display:none; }
+        }
+        @media (min-width: 769px) {
+            .nav-mobile-toggle { display:none; }
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900 min-h-screen antialiased">
-    <nav class="bg-white border-b border-slate-200 sticky top-0 z-10">
-        <div class="max-w-5xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between">
-            <a href="{{ route('dashboard') }}" class="flex items-center gap-2.5 text-slate-900 font-bold text-lg tracking-tight no-underline">
+    <nav class="bg-white border-b border-slate-200 sticky top-0 z-30">
+        <div class="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
+            <a href="{{ route('dashboard') }}" class="flex items-center gap-2.5 text-slate-900 font-bold text-lg tracking-tight no-underline shrink-0">
                 <span class="w-8 h-8 rounded-lg bg-brand-600 text-white flex items-center justify-center text-sm font-bold">B2</span>
                 Backaper <span class="text-slate-400 font-medium text-sm">v2</span>
             </a>
-            <div class="flex items-center gap-1">
-                <a href="{{ route('dashboard') }}" class="nav-link {{ request()->routeIs('dashboard') ? 'nav-link-active' : '' }}">Панель</a>
-                <a href="{{ route('servers.index') }}" class="nav-link {{ request()->routeIs('servers.*') && !request()->routeIs('servers.create') ? 'nav-link-active' : '' }}">Серверы</a>
-                <a href="{{ route('backup-batches.create') }}" class="nav-link {{ request()->routeIs('backup-batches.*') ? 'nav-link-active' : '' }}">Бэкап</a>
-                <a href="{{ route('backup-runs.index') }}" class="nav-link {{ request()->routeIs('backup-runs.*') ? 'nav-link-active' : '' }}">История</a>
-                <a href="{{ route('guide') }}" class="nav-link {{ request()->routeIs('guide') ? 'nav-link-active' : '' }}">Как пользоваться</a>
-                <a href="{{ route('servers.create') }}" class="btn btn-primary ml-2 !py-2 !px-3.5">+ Сервер</a>
+
+            <div class="nav-desktop flex items-center gap-0.5 overflow-x-auto">
+                <a href="{{ route('dashboard') }}" class="nav-link {{ request()->routeIs('dashboard') ? 'nav-link-active' : '' }}" title="Активные бэкапы">Панель</a>
+                <a href="{{ route('servers.index') }}" class="nav-link {{ request()->routeIs('servers.index') || request()->routeIs('servers.show') || request()->routeIs('servers.edit') ? 'nav-link-active' : '' }}" title="Список SSH и быстрый запуск">Серверы</a>
+                <a href="{{ route('backup-batches.create') }}" class="nav-link {{ request()->routeIs('backup-batches.*') ? 'nav-link-active' : '' }}" title="Собрать очередь бэкапов">Очередь</a>
+                <a href="{{ route('backup-runs.index') }}" class="nav-link {{ request()->routeIs('backup-runs.*') ? 'nav-link-active' : '' }}" title="Логи всех запусков">История</a>
+                <a href="{{ route('guide') }}" class="nav-link {{ request()->routeIs('guide') ? 'nav-link-active' : '' }}">Справка</a>
+                <a href="{{ route('servers.create') }}" class="btn btn-primary ml-2 !py-1.5 !px-3 !text-xs">+ Сервер</a>
             </div>
+
+            <button type="button" id="nav-mobile-btn" class="nav-mobile-toggle btn btn-secondary !py-1.5 !px-3" aria-label="Меню">☰</button>
+        </div>
+        <div id="nav-mobile-panel" class="hidden border-t border-slate-100 bg-white px-4 py-3 space-y-1 md:hidden">
+            <a href="{{ route('dashboard') }}" class="nav-link block {{ request()->routeIs('dashboard') ? 'nav-link-active' : '' }}">Панель — активные бэкапы</a>
+            <a href="{{ route('servers.index') }}" class="nav-link block {{ request()->routeIs('servers.index') ? 'nav-link-active' : '' }}">Серверы — выбор и запуск</a>
+            <a href="{{ route('backup-batches.create') }}" class="nav-link block {{ request()->routeIs('backup-batches.create') ? 'nav-link-active' : '' }}">Очередь — массовый бэкап</a>
+            <a href="{{ route('backup-runs.index') }}" class="nav-link block {{ request()->routeIs('backup-runs.*') ? 'nav-link-active' : '' }}">История — логи</a>
+            <a href="{{ route('guide') }}" class="nav-link block {{ request()->routeIs('guide') ? 'nav-link-active' : '' }}">Справка</a>
+            <a href="{{ route('servers.create') }}" class="btn btn-primary !mt-2 w-full">+ Сервер</a>
         </div>
     </nav>
 
-    <main class="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+    <main class="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-10 @yield('main_class')">
+        @hasSection('nav_map')
+            <div class="nav-map">@yield('nav_map')</div>
+        @else
+            <div class="nav-map">
+                <a href="{{ route('dashboard') }}">Панель</a>
+                <span class="sep">→</span>
+                <a href="{{ route('servers.index') }}">Серверы</a>
+                <span class="sep">→</span>
+                <a href="{{ route('backup-batches.create') }}">Очередь</a>
+                <span class="sep">→</span>
+                <a href="{{ route('backup-runs.index') }}">История / логи</a>
+            </div>
+        @endif
+
         @if (session('success'))
             <div class="alert alert-success">{{ session('success') }}</div>
         @endif
@@ -90,7 +128,19 @@
     </main>
 
     <footer class="max-w-5xl mx-auto px-4 sm:px-6 pb-8 text-center text-xs text-slate-400">
-        Backaper v2 · полный бэкап сервера + отдельные дампы БД · Яндекс.Диск
+        Backaper v2 · серверы по очереди · Яндекс.Диск
     </footer>
+
+    <script>
+    (function () {
+        const btn = document.getElementById('nav-mobile-btn');
+        const panel = document.getElementById('nav-mobile-panel');
+        if (!btn || !panel) return;
+        btn.addEventListener('click', function () {
+            panel.classList.toggle('hidden');
+        });
+    })();
+    </script>
+    @stack('scripts')
 </body>
 </html>

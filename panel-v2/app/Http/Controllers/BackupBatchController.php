@@ -13,9 +13,11 @@ use Throwable;
 
 class BackupBatchController extends Controller
 {
-    public function create(): View
+    public function create(Request $request): View
     {
         $servers = Server::query()
+            ->orderByRaw('CASE WHEN last_backup_at IS NULL THEN 1 ELSE 0 END')
+            ->orderBy('last_backup_at')
             ->orderBy('name')
             ->get();
 
@@ -24,9 +26,16 @@ class BackupBatchController extends Controller
             ->latest()
             ->first();
 
+        $preselected = collect($request->input('server_ids', []))
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->all();
+
         return view('backup-batches.create', [
             'servers' => $servers,
             'activeBatch' => $active,
+            'preselected' => $preselected,
+            'prefillMode' => $request->string('mode')->toString() ?: 'both',
         ]);
     }
 

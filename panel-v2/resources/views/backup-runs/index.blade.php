@@ -2,13 +2,26 @@
 
 @section('title', 'История бэкапов')
 
+@section('nav_map')
+    <a href="{{ route('dashboard') }}">Панель</a>
+    <span class="sep">→</span>
+    <a href="{{ route('servers.index') }}">Серверы</a>
+    <span class="sep">→</span>
+    <a href="{{ route('backup-batches.create') }}">Очередь</a>
+    <span class="sep">→</span>
+    <strong class="text-slate-700">История</strong>
+@endsection
+
 @section('content')
 <div class="mb-8 flex flex-wrap items-end justify-between gap-4">
     <div>
         <h1 class="page-title">История бэкапов</h1>
         <p class="page-subtitle">Все запуски — открывайте лог любого прогона</p>
     </div>
-    <a href="{{ route('dashboard') }}" class="btn btn-secondary">← Панель</a>
+    <div class="flex gap-2">
+        <a href="{{ route('servers.index') }}" class="btn btn-primary">Запустить с серверов</a>
+        <a href="{{ route('dashboard') }}" class="btn btn-secondary">Панель</a>
+    </div>
 </div>
 
 <div class="flex flex-wrap gap-2 mb-6">

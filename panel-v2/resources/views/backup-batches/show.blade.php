@@ -2,6 +2,16 @@
 
 @section('title', 'Очередь #'.$batch->id)
 
+@section('nav_map')
+    <a href="{{ route('dashboard') }}">Панель</a>
+    <span class="sep">→</span>
+    <a href="{{ route('servers.index') }}">Серверы</a>
+    <span class="sep">→</span>
+    <a href="{{ route('backup-batches.create') }}">Очередь</a>
+    <span class="sep">→</span>
+    <strong class="text-slate-700">#{{ $batch->id }}</strong>
+@endsection
+
 @section('content')
 <div class="mb-8 flex flex-wrap items-start justify-between gap-4">
     <div>
@@ -27,6 +37,8 @@
             </form>
         @endif
         <a href="{{ route('backup-batches.create') }}" class="btn btn-secondary">Новая очередь</a>
+        <a href="{{ route('servers.index') }}" class="btn btn-secondary">Серверы</a>
+        <a href="{{ route('dashboard') }}" class="btn btn-secondary">Панель</a>
     </div>
 </div>
 
