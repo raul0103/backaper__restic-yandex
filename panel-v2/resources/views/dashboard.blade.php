@@ -88,20 +88,15 @@
                     <div class="flex flex-wrap items-start justify-between gap-3">
                         <div class="min-w-0">
                             <div class="flex flex-wrap items-center gap-2 mb-1">
-                                <span class="font-semibold text-slate-900">Очередь #{{ $batch->id }}</span>
+                                <span class="font-semibold text-slate-900">
+                                    {{ $current?->server?->name ?? ($batch->message ?: 'Очередь') }}
+                                </span>
                                 <span class="badge bg-blue-100 text-blue-800">{{ $batch->statusLabel() }}</span>
                                 <span class="text-xs text-slate-400">{{ $batch->modeLabel() }}</span>
                             </div>
-                            <p class="text-sm text-slate-600">
-                                @if ($current?->server)
-                                    Сейчас: <strong>{{ $current->server->name }}</strong>
-                                    @if ($current->message)
-                                        <span class="text-slate-400">· {{ \Illuminate\Support\Str::limit($current->message, 80) }}</span>
-                                    @endif
-                                @else
-                                    {{ $batch->message ?: 'Ожидание…' }}
-                                @endif
-                            </p>
+                            @if ($current?->message)
+                                <p class="text-sm text-slate-500">{{ \Illuminate\Support\Str::limit($current->message, 100) }}</p>
+                            @endif
                             <p class="text-xs text-slate-400 mt-1">
                                 {{ $done }}/{{ $total }} серверов · старт {{ $batch->started_at?->format('d.m H:i') ?? '—' }}
                             </p>
@@ -121,10 +116,9 @@
                     <div class="flex flex-wrap items-start justify-between gap-3">
                         <div>
                             <div class="flex flex-wrap items-center gap-2 mb-1">
-                                <span class="font-semibold text-slate-900">Бэкап #{{ $run->id }}</span>
+                                <span class="font-semibold text-slate-900">{{ $run->server?->name ?? ('Бэкап #'.$run->id) }}</span>
                                 <span class="badge bg-blue-100 text-blue-800">running</span>
                             </div>
-                            <p class="text-sm text-slate-600">{{ $run->server?->name }}</p>
                         </div>
                         <a href="{{ route('backup-runs.show', $run) }}" class="btn btn-primary !py-2 !text-sm">Лог</a>
                     </div>
@@ -139,18 +133,23 @@
         <h2 class="section-title !mb-0">Серверы (кратко)</h2>
         <a href="{{ route('servers.index') }}" class="btn btn-secondary !py-2">Все и запуск →</a>
     </div>
+    <p class="flex flex-wrap items-center gap-4 text-xs text-slate-500 mb-3">
+        <span class="inline-flex items-center gap-1.5"><span class="inline-block w-1 h-3 rounded-sm" style="background:#8b5cf6"></span> VPS</span>
+        <span class="inline-flex items-center gap-1.5"><span class="inline-block w-1 h-3 rounded-sm" style="background:#14b8a6"></span> Хостинг</span>
+    </p>
     @forelse ($servers->take(8) as $server)
-        <a href="{{ route('servers.show', $server) }}" class="card card-hover block p-3 mb-2 no-underline text-inherit">
+        <a href="{{ route('servers.show', $server) }}" class="card card-hover block p-3 mb-2 no-underline text-inherit {{ $server->isVps() ? 'server-kind-vps' : 'server-kind-hosting' }}">
             <div class="flex flex-wrap items-center justify-between gap-2">
-                <div>
+                <div class="flex flex-wrap items-center gap-2 min-w-0">
                     <span class="font-semibold text-slate-900">{{ $server->name }}</span>
-                    <span class="text-sm ml-2" style="{{ $server->backupAgeStyle() }}">{{ $server->backupAgeLabel() }}</span>
+                    @if (in_array($server->id, $queuedServerIds ?? [], true))
+                        <span class="badge bg-blue-100 text-blue-800">в очереди</span>
+                    @endif
+                    <span class="text-sm" style="{{ $server->backupAgeStyle() }}">{{ $server->backupAgeLabel() }}</span>
                 </div>
-                @if ($server->is_setup_complete)
-                    <span class="badge badge-success">restic</span>
-                @else
+                @unless ($server->is_setup_complete)
                     <span class="badge badge-warning">нет restic</span>
-                @endif
+                @endunless
             </div>
         </a>
     @empty

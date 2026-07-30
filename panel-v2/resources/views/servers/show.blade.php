@@ -14,10 +14,7 @@
 <div class="flex flex-wrap items-start justify-between gap-4 mb-6">
     <div>
         <h1 class="page-title">{{ $server->name }}</h1>
-        <p class="page-subtitle">
-            <span class="badge badge-info">{{ $server->kindLabel() }}</span>
-            <span class="ml-2 font-mono text-xs">{{ $server->ssh_user }}@{{ $server->host }}:{{ $server->ssh_port }}</span>
-        </p>
+        <p class="page-subtitle">{{ $server->kindLabel() }}</p>
     </div>
     <div class="flex flex-wrap gap-2">
         @if ($server->readyForRemoteSetup())
@@ -29,6 +26,11 @@
         @endif
         <a href="{{ route('servers.restore', $server) }}" class="btn btn-secondary">Восстановление</a>
         <a href="{{ route('servers.edit', $server) }}" class="btn btn-secondary">Изменить</a>
+        <form method="post" action="{{ route('servers.destroy', $server) }}" onsubmit="return confirm('Удалить «{{ $server->name }}» из панели?\n\nБэкапы на Яндекс.Диске останутся.')">
+            @csrf
+            @method('DELETE')
+            <button type="submit" class="btn btn-secondary !text-red-600 !border-red-200 hover:!bg-red-50">Удалить</button>
+        </form>
     </div>
 </div>
 

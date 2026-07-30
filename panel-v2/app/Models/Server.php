@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Collection;
 
 class Server extends Model
 {
@@ -152,6 +153,58 @@ class Server extends Model
     public function kindLabel(): string
     {
         return $this->isVps() ? 'VPS' : 'Хостинг';
+    }
+
+    /** CSS-класс бейджа типа сервера (VPS / хостинг). */
+    public function kindBadgeClass(): string
+    {
+        return $this->isVps() ? 'badge-vps' : 'badge-hosting';
+    }
+
+    /**
+     * ID серверов в активных очередях (pending/running), в порядке очереди.
+     *
+     * @return list<int>
+     */
+    public static function activeQueueServerIds(): array
+    {
+        return BackupBatchItem::query()
+            ->whereIn('status', ['pending', 'running'])
+            ->whereHas('batch', fn ($q) => $q->whereIn('status', ['pending', 'running']))
+            ->orderBy('backup_batch_id')
+            ->orderBy('position')
+            ->pluck('server_id')
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Список для UI: сначала серверы из текущей очереди (по позиции), потом остальные по давности бэкапа.
+     *
+     * @return Collection<int, Server>
+     */
+    public static function listForUi(): Collection
+    {
+        $queueIds = self::activeQueueServerIds();
+
+        $servers = static::query()
+            ->orderByRaw('CASE WHEN last_backup_at IS NULL THEN 1 ELSE 0 END')
+            ->orderBy('last_backup_at')
+            ->orderBy('name')
+            ->get();
+
+        if ($queueIds === []) {
+            return $servers;
+        }
+
+        $byId = $servers->keyBy('id');
+        $queued = collect($queueIds)
+            ->map(fn (int $id) => $byId->get($id))
+            ->filter();
+        $rest = $servers->reject(fn (Server $s) => in_array($s->id, $queueIds, true));
+
+        return $queued->concat($rest)->values();
     }
 
     public function isWizardComplete(): bool

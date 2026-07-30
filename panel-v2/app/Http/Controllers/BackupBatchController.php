@@ -15,11 +15,7 @@ class BackupBatchController extends Controller
 {
     public function create(Request $request): View
     {
-        $servers = Server::query()
-            ->orderByRaw('CASE WHEN last_backup_at IS NULL THEN 1 ELSE 0 END')
-            ->orderBy('last_backup_at')
-            ->orderBy('name')
-            ->get();
+        $servers = Server::listForUi();
 
         $active = BackupBatch::query()
             ->whereIn('status', ['pending', 'running'])
@@ -33,6 +29,7 @@ class BackupBatchController extends Controller
 
         return view('backup-batches.create', [
             'servers' => $servers,
+            'queuedServerIds' => Server::activeQueueServerIds(),
             'activeBatch' => $active,
             'preselected' => $preselected,
             'prefillMode' => $request->string('mode')->toString() ?: 'both',
@@ -48,15 +45,21 @@ class BackupBatchController extends Controller
             'poll_minutes' => ['nullable', 'integer', 'min:1', 'max:120'],
         ]);
 
+        $queuedIds = Server::activeQueueServerIds();
         $readyIds = Server::query()
             ->whereIn('id', $data['server_ids'])
             ->get()
             ->filter(fn (Server $s) => $s->readyForBackup())
+            ->reject(fn (Server $s) => in_array($s->id, $queuedIds, true))
             ->pluck('id')
             ->all();
 
         if ($readyIds === []) {
-            return back()->with('error', 'Среди выбранных нет серверов с установленным restic.');
+            $anyQueued = collect($data['server_ids'])->intersect($queuedIds)->isNotEmpty();
+
+            return back()->with('error', $anyQueued
+                ? 'Выбранные серверы уже в активной очереди.'
+                : 'Среди выбранных нет серверов с установленным restic.');
         }
 
         try {
@@ -69,11 +72,15 @@ class BackupBatchController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
-        $this->spawnProcessor($batch->id);
+        $started = $batches->tryStartNext();
+        $waiting = $batch->fresh()->status === 'pending'
+            && (! $started || (int) $started->id !== (int) $batch->id);
 
         return redirect()
             ->route('backup-batches.show', $batch)
-            ->with('success', 'Очередь создана: серверы пойдут по одному, без параллельной нагрузки на Яндекс.');
+            ->with('success', $waiting
+                ? 'Очередь добавлена и ждёт завершения текущей (глобально одна очередь за раз).'
+                : 'Очередь запущена: серверы пойдут по одному.');
     }
 
     public function show(BackupBatch $backupBatch): View
@@ -117,23 +124,5 @@ class BackupBatchController extends Controller
         $batches->cancel($backupBatch);
 
         return back()->with('success', 'Отмена запрошена. Текущий сервер остановится на следующей проверке; уже запущенный бэкап на SSH может продолжаться.');
-    }
-
-    private function spawnProcessor(int $batchId): void
-    {
-        $php = PHP_BINARY;
-        $artisan = base_path('artisan');
-        $id = (int) $batchId;
-
-        if (PHP_OS_FAMILY === 'Windows') {
-            $cmd = 'start /B "" '.escapeshellarg($php).' '.escapeshellarg($artisan).' backaper:process-batch '.$id;
-            pclose(popen($cmd, 'r'));
-
-            return;
-        }
-
-        $cmd = escapeshellarg($php).' '.escapeshellarg($artisan).' backaper:process-batch '.$id
-            .' >> '.escapeshellarg(storage_path('logs/batch-'.$id.'.log')).' 2>&1 &';
-        exec($cmd);
     }
 }

@@ -68,9 +68,11 @@
     </div>
 </form>
 
-<form method="post" action="{{ route('servers.destroy', $server) }}" class="mt-8" onsubmit="return confirm('Удалить сервер из панели?')">
+<form method="post" action="{{ route('servers.destroy', $server) }}" class="mt-8 card p-5 border-red-100" onsubmit="return confirm('Удалить «{{ $server->name }}» из панели?\n\nБэкапы на Яндекс.Диске останутся.')">
     @csrf
     @method('DELETE')
-    <button type="submit" class="btn btn-danger">Удалить сервер</button>
+    <h2 class="text-sm font-semibold text-red-700 mb-1">Удалить сервер</h2>
+    <p class="text-sm text-slate-500 mb-4">Уберёт сервер из панели и связанные записи. Файлы на Яндекс.Диске не удаляются.</p>
+    <button type="submit" class="btn btn-secondary !text-red-600 !border-red-200 hover:!bg-red-50">Удалить из панели</button>
 </form>
 @endsection

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\BackupBatch;
 use App\Models\BackupBatchItem;
+use App\Models\Server;
 use RuntimeException;
 use Throwable;
 
@@ -22,12 +23,30 @@ class BackupBatchService
         if (! in_array($mode, [BackupBatch::MODE_FILES, BackupBatch::MODE_DATABASES, BackupBatch::MODE_BOTH], true)) {
             throw new RuntimeException('Неверный режим бэкапа.');
         }
+
+        $busy = array_intersect($serverIds, Server::activeQueueServerIds());
+        if ($busy !== []) {
+            $names = Server::query()
+                ->whereIn('id', $busy)
+                ->pluck('name')
+                ->implode(', ');
+            throw new RuntimeException('Уже в очереди: '.$names);
+        }
+
         $pollSeconds = max(60, $pollSeconds);
+
+        $blocking = BackupBatch::query()
+            ->whereIn('status', ['pending', 'running'])
+            ->orderBy('id')
+            ->first();
 
         $batch = BackupBatch::create([
             'status' => 'pending',
             'mode' => $mode,
             'poll_seconds' => $pollSeconds,
+            'message' => $blocking
+                ? "Ожидает завершения очереди #{$blocking->id}"
+                : 'Ожидает запуска',
         ]);
 
         foreach (array_values($serverIds) as $i => $serverId) {
@@ -42,12 +61,76 @@ class BackupBatchService
         return $batch->fresh(['items.server']);
     }
 
+    /**
+     * Глобально одна очередь за раз: если никто не running — стартуем самую старую pending.
+     */
+    public function tryStartNext(): ?BackupBatch
+    {
+        if (BackupBatch::query()->where('status', 'running')->exists()) {
+            return null;
+        }
+
+        $next = BackupBatch::query()
+            ->where('status', 'pending')
+            ->orderBy('id')
+            ->first();
+
+        if (! $next) {
+            return null;
+        }
+
+        $this->spawnProcessor((int) $next->id);
+
+        return $next;
+    }
+
+    public function spawnProcessor(int $batchId): void
+    {
+        $php = PHP_BINARY;
+        $artisan = base_path('artisan');
+        $id = (int) $batchId;
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            $cmd = 'start /B "" '.escapeshellarg($php).' '.escapeshellarg($artisan).' backaper:process-batch '.$id;
+            pclose(popen($cmd, 'r'));
+
+            return;
+        }
+
+        $cmd = escapeshellarg($php).' '.escapeshellarg($artisan).' backaper:process-batch '.$id
+            .' >> '.escapeshellarg(storage_path('logs/batch-'.$id.'.log')).' 2>&1 &';
+        exec($cmd);
+    }
+
     /** Последовательный прогон: один сервер → опрос раз в poll_seconds → следующий. */
     public function process(BackupBatch $batch): BackupBatch
     {
         $batch->refresh();
         if ($batch->status === 'cancelled') {
+            $this->tryStartNext();
+
             return $batch;
+        }
+
+        if (in_array($batch->status, ['completed', 'failed'], true)) {
+            $this->tryStartNext();
+
+            return $batch;
+        }
+
+        // Не запускаем параллельно другую очередь
+        $otherRunning = BackupBatch::query()
+            ->where('status', 'running')
+            ->where('id', '!=', $batch->id)
+            ->orderBy('id')
+            ->first();
+        if ($otherRunning) {
+            $batch->update([
+                'status' => 'pending',
+                'message' => "Ожидает завершения очереди #{$otherRunning->id}",
+            ]);
+
+            return $batch->fresh(['items.server', 'items.backupRun']);
         }
 
         $batch->update([
@@ -64,6 +147,7 @@ class BackupBatchService
             $batch->refresh();
             if ($batch->status === 'cancelled') {
                 $this->skipRemaining($batch, 'Отменено');
+                $this->tryStartNext();
 
                 return $batch->fresh(['items.server', 'items.backupRun']);
             }
@@ -102,6 +186,9 @@ class BackupBatchService
                 ? 'Очередь завершена с ошибками'
                 : 'Все серверы обработаны',
         ]);
+
+        // Следующая ожидающая очередь
+        $this->tryStartNext();
 
         return $batch->fresh(['items.server', 'items.backupRun']);
     }
@@ -157,7 +244,26 @@ class BackupBatchService
             $item->update([
                 'message' => 'Ещё работает… следующая SSH-проверка через '.($pollSeconds / 60).' мин',
             ]);
-            sleep($pollSeconds);
+
+            // Не блокируем на весь poll_seconds: UI/другой процесс мог уже
+            // пометить run completed — проверяем чаще короткими sleep.
+            $deadline = time() + $pollSeconds;
+            while (time() < $deadline) {
+                if (! $run->fresh()->isRunning()) {
+                    break 2;
+                }
+                $batch->refresh();
+                if ($batch->status === 'cancelled') {
+                    $item->update([
+                        'status' => 'skipped',
+                        'message' => 'Отменено (бэкап на сервере мог продолжаться)',
+                        'finished_at' => now(),
+                    ]);
+
+                    return;
+                }
+                sleep(min(30, max(1, $deadline - time())));
+            }
         }
 
         $run->refresh();
@@ -192,9 +298,26 @@ class BackupBatchService
             return;
         }
 
+        $wasPending = $batch->status === 'pending';
+
         $batch->update([
             'status' => 'cancelled',
-            'message' => 'Отмена запрошена — текущий сервер дождётся следующей проверки',
+            'message' => $wasPending
+                ? 'Отменено до запуска'
+                : 'Отмена запрошена — текущий сервер дождётся следующей проверки',
+            'finished_at' => $wasPending ? now() : $batch->finished_at,
+            'current_item_id' => $wasPending ? null : $batch->current_item_id,
         ]);
+
+        if ($wasPending) {
+            $batch->items()
+                ->where('status', 'pending')
+                ->update([
+                    'status' => 'skipped',
+                    'message' => 'Отменено',
+                    'finished_at' => now(),
+                ]);
+            $this->tryStartNext();
+        }
     }
 }

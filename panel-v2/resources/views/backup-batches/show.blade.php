@@ -59,7 +59,6 @@
             <li class="px-4 sm:px-6 py-4 flex flex-wrap items-start justify-between gap-3" data-item-id="{{ $item->id }}">
                 <div>
                     <div class="font-semibold text-slate-900">{{ $item->server?->name }}</div>
-                    <div class="text-xs font-mono text-slate-400 mt-0.5">{{ $item->server?->ssh_user }}@{{ $item->server?->host }}</div>
                     <div class="item-msg text-sm text-slate-500 mt-1">{{ $item->message }}</div>
                 </div>
                 <div class="flex items-center gap-2 shrink-0">

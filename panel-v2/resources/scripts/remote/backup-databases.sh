@@ -49,15 +49,66 @@ is_junk_config() {
   return 1
 }
 
+# Корни поиска: $HOME + типичные VPS-пути (/home/web/docker/... часто не под $HOME SSH-юзера)
+collect_find_roots() {
+  local HOME_DIR="${HOME:-/home/$USER}"
+  local r candidate
+  local -a out=()
+
+  add_root() {
+    local p="$1"
+    [[ -n "$p" && -d "$p" ]] || return 0
+    for r in "${out[@]+"${out[@]}"}"; do
+      [[ "$r" == "$p" ]] && return 0
+    done
+    out+=("$p")
+  }
+
+  add_root "$HOME_DIR"
+  add_root "$HOME_DIR/web"
+  add_root "$HOME_DIR/domains"
+  add_root "$HOME_DIR/docker"
+  # Часто проекты лежат у пользователя web, а бэкап идёт от root/другого юзера
+  add_root /home/web
+  add_root /home/web/docker
+  add_root /var/www
+  add_root /srv
+  add_root /opt
+  # Весь /home (VPS) — по умолчанию или BACKAPER_FIND_VPS=1
+  if [[ "${BACKAPER_FIND_VPS:-1}" == "1" ]] || [[ -d /home/web ]] || [[ -d /var/www ]] || command -v docker >/dev/null 2>&1; then
+    add_root /home
+  fi
+
+  # Явные подсказки из env (через запятую)
+  if [[ -n "${BACKAPER_DB_SEARCH_ROOTS:-}" ]]; then
+    IFS=',' read -ra candidate <<< "${BACKAPER_DB_SEARCH_ROOTS}"
+    for r in "${candidate[@]}"; do
+      r="$(echo "$r" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+      add_root "$r"
+    done
+  fi
+
+  printf '%s\n' "${out[@]}"
+}
+
 find_configs() {
   set +e
   local HOME_DIR="${HOME:-/home/$USER}"
   local found=""
+  local -a roots=()
+  local d f line extra
 
+  mapfile -t roots < <(collect_find_roots)
+  # на случай пустого mapfile
+  [[ ${#roots[@]} -eq 0 ]] && roots=("$HOME_DIR")
+
+  # Быстрые глабы (Beget/типичный хостинг)
   for d in \
     "$HOME_DIR"/*/public_html/core/config \
     "$HOME_DIR"/web/*/public_html/core/config \
-    "$HOME_DIR"/domains/*/public_html/core/config
+    "$HOME_DIR"/domains/*/public_html/core/config \
+    /home/web/*/public_html/core/config \
+    /home/web/docker/*/backend/core/config
   do
     [ -f "$d/config.inc.php" ] && found="$found
 $d/config.inc.php"
@@ -66,61 +117,68 @@ $d/config.inc.php"
   for f in \
     "$HOME_DIR"/*/public_html/wp-config.php \
     "$HOME_DIR"/web/*/public_html/wp-config.php \
-    "$HOME_DIR"/domains/*/public_html/wp-config.php
+    "$HOME_DIR"/domains/*/public_html/wp-config.php \
+    /home/web/*/public_html/wp-config.php
   do
     [ -f "$f" ] && found="$found
 $f"
   done
 
-  # Только корневые .env сайта — не vue/.env из компонентов
   for f in \
     "$HOME_DIR"/*/public_html/.env \
     "$HOME_DIR"/*/.env \
     "$HOME_DIR"/web/*/.env \
     "$HOME_DIR"/web/*/public_html/.env \
-    "$HOME_DIR"/domains/*/public_html/.env
+    "$HOME_DIR"/domains/*/public_html/.env \
+    /home/web/docker/*/*/.env \
+    /home/web/docker/*/backend/.env \
+    /home/web/*/backend/.env
   do
     [ -f "$f" ] && found="$found
 $f"
   done
 
-  # Глубокий поиск — только явно (VPS) или если глабы ничего не дали
-  local need_deep=0
-  if [[ "${BACKAPER_FIND_VPS:-}" == "1" ]]; then
-    need_deep=1
-  elif [[ -z "$(printf '%s' "$found" | sed '/^$/d')" ]] && [[ -d /var/www ]]; then
-    need_deep=1
-  fi
-
-  if [[ "$need_deep" -eq 1 ]]; then
-    local roots="/var/www /home"
-    case "${HOME:-}" in
-      /home/*|/root|"") ;;
-      *) roots="$roots $HOME" ;;
-    esac
-    # shellcheck disable=SC2086
-    local extra
-    extra="$(find $roots \
-      \( -name node_modules -o -name vendor -o -name .git -o -name cache -o -name .cache \
-         -o -name .npm -o -name storage -o -name packages -o -path '*/core/packages' \
-         -o -path '*/assets/components' \) -prune -o \
-      \( \
-        -path '*/core/config/config.inc.php' -type f -print -o \
-        -name 'wp-config.php' -type f -print -o \
-        -path '*/public_html/.env' -type f -print \
-      \) \
-      2>/dev/null \
-    | head -n 250)"
-    found="$found
+  # Глубокий find: docker/laravel (web/docker/passtore/backend/.env и т.п.)
+  # shellcheck disable=SC2086
+  extra="$(find "${roots[@]}" \
+    -maxdepth 12 \
+    \( -name node_modules -o -name vendor -o -name .git -o -name cache -o -name .cache \
+       -o -name .npm -o -name storage -o -name packages -o -path '*/core/packages' \
+       -o -path '*/assets/components' -o -name .cagefs -o -name .service \
+       -o -name proc -o -name sys -o -name run \) -prune -o \
+    \( \
+      -path '*/core/config/config.inc.php' -type f -print -o \
+      -name 'wp-config.php' -type f -print -o \
+      -name '.env' -type f -print \
+    \) \
+    2>/dev/null \
+  | head -n 400)"
+  found="$found
 $extra"
+
+  # Диагностика в stderr (попадёт в лог бэкапа), если ничего нет
+  if [[ -z "$(printf '%s' "$found" | sed '/^$/d')" ]]; then
+    log "DEBUG: HOME=${HOME_DIR} USER=${USER:-?} roots=${roots[*]}" >&2
+    log "DEBUG: ls /home → $(ls -1 /home 2>/dev/null | tr '\n' ' ' | head -c 200)" >&2
+    log "DEBUG: test paths:" >&2
+    for f in \
+      /home/web/docker/passtore/backend/.env \
+      "$HOME_DIR/web/docker/passtore/backend/.env" \
+      /home/web/docker/passtore/.env
+    do
+      if [[ -e "$f" ]]; then
+        log "DEBUG: EXISTS $f" >&2
+      else
+        log "DEBUG: missing $f" >&2
+      fi
+    done
   fi
 
-  local line
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     is_junk_config "$line" && continue
     printf '%s\n' "$line"
-  done <<< "$(printf '%s' "$found" | sed '/^$/d' | sort -u)" | head -n 80
+  done <<< "$(printf '%s' "$found" | sed '/^$/d' | sort -u)" | head -n 150
   set -e
 }
 
@@ -141,16 +199,95 @@ ignore_volatile_args() {
   printf '%s\n' "${args[@]}"
 }
 
-dump_database() {
-  local db_host="$1" db_user="$2" db_pass="$3" db_name="$4" out="$5"
+is_docker_db_host() {
+  case "$(echo "$1" | tr '[:upper:]' '[:lower:]')" in
+    mysql|mariadb|db|database|postgres|postgresql) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Найти контейнер MySQL по каталогу с .env / compose.yaml (Sail и т.п.)
+resolve_mysql_container() {
+  local start_dir="$1"
+  local dir="$start_dir" f svc cid i
+
+  command -v docker >/dev/null 2>&1 || return 1
+
+  for i in 1 2 3 4 5 6; do
+    for f in compose.yaml compose.yml docker-compose.yml docker-compose.yaml compose.dev.yaml; do
+      [[ -f "$dir/$f" ]] || continue
+      for svc in mysql mariadb db database; do
+        cid="$(
+          cd "$dir" && docker compose -f "$f" ps -q "$svc" 2>/dev/null | head -1
+        )"
+        if [[ -n "$cid" ]]; then
+          printf '%s' "$cid"
+          return 0
+        fi
+      done
+    done
+    [[ "$dir" == "/" ]] && break
+    dir="$(dirname "$dir")"
+  done
+  return 1
+}
+
+# Дамп внутри контейнера (mysqldump есть в mysql-образе, на хосте часто нет)
+dump_via_docker() {
+  local cid="$1" db_user="$2" db_pass="$3" db_name="$4" out="$5"
   local -a ignore=()
-  local line
+  local line errf dump_bin
   while IFS= read -r line; do
     [[ -n "$line" ]] && ignore+=("$line")
   done < <(ignore_volatile_args "$db_name")
 
-  local errf="$TMP_DIR/dump.err"
-  # 1) обычный consistent dump без session-таблиц
+  errf="$TMP_DIR/dump.err"
+  dump_bin=mysqldump
+  if ! docker exec "$cid" sh -c "command -v mysqldump >/dev/null 2>&1"; then
+    if docker exec "$cid" sh -c "command -v mariadb-dump >/dev/null 2>&1"; then
+      dump_bin=mariadb-dump
+    else
+      printf '%s' "docker: mysqldump not in container ${cid:0:12}" > "$TMP_DIR/dump.last_err"
+      return 1
+    fi
+  fi
+
+  log "docker dump: container=${cid:0:12} db=${db_name}"
+
+  # 1) single-transaction
+  if docker exec -e MYSQL_PWD="$db_pass" "$cid" \
+    "$dump_bin" -u"$db_user" --single-transaction --quick --routines --triggers \
+    --max-allowed-packet=512M "${ignore[@]}" "$db_name" \
+    >"$out" 2>"$errf"; then
+    [[ -s "$out" ]] && return 0
+  fi
+
+  # 2) без single-transaction
+  log "RETRY docker mysqldump (без single-transaction): ${db_name}"
+  if docker exec -e MYSQL_PWD="$db_pass" "$cid" \
+    "$dump_bin" -u"$db_user" --quick --routines --triggers \
+    --max-allowed-packet=512M --lock-tables=false "${ignore[@]}" "$db_name" \
+    >"$out" 2>"$errf"; then
+    [[ -s "$out" ]] && return 0
+  fi
+
+  grep -v 'Using a password' "$errf" 2>/dev/null | tr '\n' ' ' | head -c 240 > "$TMP_DIR/dump.last_err"
+  return 1
+}
+
+dump_via_host() {
+  local db_host="$1" db_user="$2" db_pass="$3" db_name="$4" out="$5"
+  local -a ignore=()
+  local line errf
+
+  [[ "${HAS_HOST_DUMP}" == "1" ]] || return 1
+
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && ignore+=("$line")
+  done < <(ignore_volatile_args "$db_name")
+
+  errf="$TMP_DIR/dump.err"
+
   if "${DUMP_BIN[@]}" -h "$db_host" -u "$db_user" --password="$db_pass" \
     --single-transaction --quick --routines --triggers --max-allowed-packet=512M \
     "${ignore[@]}" \
@@ -158,10 +295,6 @@ dump_database() {
     return 0
   fi
 
-  local dump_err
-  dump_err="$(grep -v 'Using a password' "$errf" | tr '\n' ' ' | head -c 240)"
-
-  # 2) Error 1412 / schema changed — повтор
   if grep -qE 'Error 1412|Table definition has changed' "$errf"; then
     log "RETRY mysqldump (1412): ${db_name}"
     sleep 2
@@ -171,10 +304,8 @@ dump_database() {
       "$db_name" > "$out" 2>"$errf"; then
       return 0
     fi
-    dump_err="$(grep -v 'Using a password' "$errf" | tr '\n' ' ' | head -c 240)"
   fi
 
-  # 3) без single-transaction (хуже консистентность, но дамп часто проходит)
   log "RETRY mysqldump (без single-transaction): ${db_name}"
   if "${DUMP_BIN[@]}" -h "$db_host" -u "$db_user" --password="$db_pass" \
     --quick --routines --triggers --max-allowed-packet=512M \
@@ -184,8 +315,50 @@ dump_database() {
     return 0
   fi
 
-  dump_err="$(grep -v 'Using a password' "$errf" | tr '\n' ' ' | head -c 240)"
-  printf '%s' "$dump_err" > "$TMP_DIR/dump.last_err"
+  grep -v 'Using a password' "$errf" 2>/dev/null | tr '\n' ' ' | head -c 240 > "$TMP_DIR/dump.last_err"
+  return 1
+}
+
+# cfg_path — путь к .env/config, чтобы найти docker compose рядом
+dump_database() {
+  local db_host="$1" db_user="$2" db_pass="$3" db_name="$4" out="$5" cfg_path="${6:-}"
+  local cfg_dir cid host_try
+
+  cfg_dir="$(dirname "${cfg_path:-.}")"
+  cid=""
+  if [[ -n "$cfg_path" ]]; then
+    cid="$(resolve_mysql_container "$cfg_dir" || true)"
+  fi
+
+  # Docker-хост (mysql/mariadb) или нет клиента на хосте → сразу docker
+  if [[ -n "$cid" ]] && { is_docker_db_host "$db_host" || [[ "${HAS_HOST_DUMP}" != "1" ]]; }; then
+    if dump_via_docker "$cid" "$db_user" "$db_pass" "$db_name" "$out"; then
+      return 0
+    fi
+  fi
+
+  # Хост: как в .env, плюс 127.0.0.1 если DB_HOST=docker-имя
+  host_try="$db_host"
+  if is_docker_db_host "$db_host"; then
+    host_try="127.0.0.1"
+  fi
+  if dump_via_host "$host_try" "$db_user" "$db_pass" "$db_name" "$out"; then
+    return 0
+  fi
+  if [[ "$host_try" != "$db_host" ]] && dump_via_host "$db_host" "$db_user" "$db_pass" "$db_name" "$out"; then
+    return 0
+  fi
+
+  # Запасной docker, если раньше не пробовали / хост не вышел
+  if [[ -n "$cid" ]]; then
+    if dump_via_docker "$cid" "$db_user" "$db_pass" "$db_name" "$out"; then
+      return 0
+    fi
+  elif is_docker_db_host "$db_host"; then
+    printf '%s' "DB_HOST=${db_host}, контейнер MySQL не найден рядом с ${cfg_path:-?}" > "$TMP_DIR/dump.last_err"
+  fi
+
+  [[ -s "$TMP_DIR/dump.last_err" ]] || printf '%s' 'dump failed' > "$TMP_DIR/dump.last_err"
   return 1
 }
 
@@ -194,10 +367,18 @@ if ! command -v php >/dev/null 2>&1; then
   exit 1
 fi
 
+HAS_HOST_DUMP=0
+DUMP_BIN=(mysqldump)
 if command -v mariadb-dump >/dev/null 2>&1; then
   DUMP_BIN=(mariadb-dump)
-else
+  HAS_HOST_DUMP=1
+elif command -v mysqldump >/dev/null 2>&1; then
   DUMP_BIN=(mysqldump)
+  HAS_HOST_DUMP=1
+fi
+if [[ "${HAS_HOST_DUMP}" != "1" ]] && ! command -v docker >/dev/null 2>&1; then
+  log "ERROR: нужен mysqldump/mariadb-dump на хосте или docker с MySQL-контейнером"
+  exit 1
 fi
 
 log "cloud: ${RCLONE_REMOTE}:${CLOUD_PREFIX}/"
@@ -206,7 +387,7 @@ mapfile -t CONFIGS < <(find_configs)
 log "найдено конфигов: ${#CONFIGS[@]}"
 
 if [[ ${#CONFIGS[@]} -eq 0 ]]; then
-  log "ERROR: конфиги не найдены (MODX/WP/Laravel)"
+  log "ERROR: конфиги не найдены (MODX/WP/.env под HOME/web, в т.ч. docker/*/backend)"
   exit 1
 fi
 
@@ -226,21 +407,24 @@ for cfg in "${CONFIGS[@]}"; do
     continue
   fi
   IFS=$'\t' read -r db_host db_name db_user db_pass source label <<< "$parsed"
-  key="${db_name}|${db_user}"
+  # разные compose-проекты могут иметь одинаковые DB_DATABASE=laravel
+  key="$(dirname "$cfg")|${db_name}|${db_user}"
   if [[ -n "${SEEN[$key]:-}" ]]; then
-    log "SKIP duplicate: ${db_name}"
+    log "SKIP duplicate: ${db_name} (${label})"
     ((skip++)) || true
     continue
   fi
   SEEN[$key]=1
 
-  db_slug="$(sanitize_slug "$db_name")"
+  db_slug="$(sanitize_slug "${label}_${db_name}")"
+  [[ -z "$db_slug" || "$db_slug" == "_" ]] && db_slug="$(sanitize_slug "$db_name")"
   log "=== ${source}: ${label} (${db_name} @ ${db_host}) ← ${cfg}"
 
   dump_sql="${TMP_DIR}/${db_slug}.sql"
   dump_gz="${dump_sql}.gz"
+  : > "$TMP_DIR/dump.last_err"
 
-  if ! dump_database "$db_host" "$db_user" "$db_pass" "$db_name" "$dump_sql"; then
+  if ! dump_database "$db_host" "$db_user" "$db_pass" "$db_name" "$dump_sql" "$cfg"; then
     dump_err="$(cat "$TMP_DIR/dump.last_err" 2>/dev/null || true)"
     log "ERROR mysqldump: ${db_name}${dump_err:+ ($dump_err)}"
     rm -f "$dump_sql"

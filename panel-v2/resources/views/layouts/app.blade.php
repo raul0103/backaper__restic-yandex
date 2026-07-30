@@ -45,6 +45,10 @@
         .badge-success { background:#d1fae5; color:#047857; }
         .badge-warning { background:#fef3c7; color:#b45309; }
         .badge-info { background:#dbeafe; color:#1d4ed8; }
+        .badge-vps { background:#ede9fe; color:#5b21b6; }
+        .badge-hosting { background:#ccfbf1; color:#0f766e; }
+        .server-kind-vps { border-left:4px solid #8b5cf6; }
+        .server-kind-hosting { border-left:4px solid #14b8a6; }
         .section-title { font-size:1.125rem; font-weight:600; color:#0f172a; margin-bottom:1rem; }
         .code-block { background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:.875rem 1rem; font-family:ui-monospace,monospace; font-size:.8125rem; color:#334155; overflow-x:auto; white-space:pre-wrap; word-break:break-all; }
         .nav-link { color:#64748b; font-size:.8125rem; font-weight:500; padding:.4rem .7rem; border-radius:8px; text-decoration:none; white-space:nowrap; }

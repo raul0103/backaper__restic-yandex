@@ -55,9 +55,16 @@
         <label class="label">Токен Яндекс.Диска</label>
         <textarea name="rclone_token" rows="3" required class="textarea font-mono !text-xs">{{ old('rclone_token', $server->rclone_token) }}</textarea>
     </div>
-    <div class="flex flex-wrap gap-3">
+    <div class="flex flex-wrap gap-3 items-center">
         <button type="submit" class="btn btn-primary">Сохранить →</button>
         <button type="submit" formaction="{{ route('servers.wizard.test-connection', $server) }}" class="btn btn-secondary">Проверить SSH</button>
+        <span class="flex-1"></span>
     </div>
+</form>
+
+<form method="post" action="{{ route('servers.destroy', $server) }}" class="mt-4" onsubmit="return confirm('Удалить «{{ $server->name }}»?\nЧерновик сервера будет убран из панели.')">
+    @csrf
+    @method('DELETE')
+    <button type="submit" class="btn btn-secondary !text-red-600 !border-red-200 hover:!bg-red-50">Удалить сервер</button>
 </form>
 @endsection

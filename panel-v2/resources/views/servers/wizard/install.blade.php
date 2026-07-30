@@ -44,4 +44,10 @@
         </details>
     @endif
 </div>
+
+<form method="post" action="{{ route('servers.destroy', $server) }}" class="mt-4" onsubmit="return confirm('Удалить «{{ $server->name }}» из панели?')">
+    @csrf
+    @method('DELETE')
+    <button type="submit" class="btn btn-secondary !text-red-600 !border-red-200 hover:!bg-red-50">Удалить сервер</button>
+</form>
 @endsection

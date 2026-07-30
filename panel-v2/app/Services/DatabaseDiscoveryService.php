@@ -89,59 +89,25 @@ class DatabaseDiscoveryService
 
     private function hostingFindScript(): string
     {
-        return <<<'BASH'
-set +e
-HOME_DIR="${HOME:-/home/$USER}"
-found=""
-
-for d in \
-  "$HOME_DIR"/*/public_html/core/config \
-  "$HOME_DIR"/web/*/public_html/core/config \
-  "$HOME_DIR"/domains/*/public_html/core/config
-do
-  [ -f "$d/config.inc.php" ] && found="$found
-$d/config.inc.php"
-done
-
-for f in \
-  "$HOME_DIR"/*/public_html/wp-config.php \
-  "$HOME_DIR"/web/*/public_html/wp-config.php \
-  "$HOME_DIR"/domains/*/public_html/wp-config.php
-do
-  [ -f "$f" ] && found="$found
-$f"
-done
-
-for f in \
-  "$HOME_DIR"/*/public_html/.env \
-  "$HOME_DIR"/*/.env \
-  "$HOME_DIR"/web/*/.env \
-  "$HOME_DIR"/web/*/public_html/.env
-do
-  [ -f "$f" ] && found="$found
-$f"
-done
-
-printf '%s' "$found" | sed '/^$/d' | sort -u
-BASH;
-    }
-
-    private function vpsFindScript(): string
-    {
-        // VPS: Hestia/Vesta, /var/www, произвольная вложенность — find с prune
+        // Хостинг + docker; /home/web часто вне $HOME SSH-пользователя
         return <<<'BASH'
 set +e
 export LC_ALL=C
-roots="/var/www /home /srv /opt"
-# если HOME не внутри /home — тоже смотрим
-case "${HOME:-}" in
-  /home/*|/root|"") ;;
-  *) roots="$roots $HOME" ;;
-esac
+HOME_DIR="${HOME:-/home/$USER}"
+roots="$HOME_DIR"
+[ -d "$HOME_DIR/web" ] && roots="$roots $HOME_DIR/web"
+[ -d "$HOME_DIR/domains" ] && roots="$roots $HOME_DIR/domains"
+[ -d "$HOME_DIR/docker" ] && roots="$roots $HOME_DIR/docker"
+[ -d /home/web ] && roots="$roots /home/web /home/web/docker"
+[ -d /var/www ] && roots="$roots /var/www"
+[ -d /home ] && roots="$roots /home"
 
 # shellcheck disable=SC2086
 find $roots \
-  \( -name node_modules -o -name vendor -o -name .git -o -name cache -o -name .cache -o -name .npm -o -name storage \) -prune -o \
+  -maxdepth 12 \
+  \( -name node_modules -o -name vendor -o -name .git -o -name cache -o -name .cache \
+     -o -name .npm -o -name storage -o -name packages -o -path '*/core/packages' \
+     -o -path '*/assets/components' -o -name .cagefs -o -name .service \) -prune -o \
   \( \
     -path '*/core/config/config.inc.php' -type f -print -o \
     -name 'wp-config.php' -type f -print -o \
@@ -149,6 +115,38 @@ find $roots \
   \) \
   2>/dev/null \
 | grep -Ev '/(vendor|node_modules|\.git|cache|\.cache)/' \
+| grep -Ev '/assets/components/.*/vue/\.env$' \
+| head -n 250 \
+| sort -u
+BASH;
+    }
+
+    private function vpsFindScript(): string
+    {
+        // VPS: Hestia/Vesta, /var/www, /home/web/docker/…
+        return <<<'BASH'
+set +e
+export LC_ALL=C
+roots="/var/www /home /srv /opt /home/web /home/web/docker"
+case "${HOME:-}" in
+  /home/*|/root|"") ;;
+  *) roots="$roots $HOME" ;;
+esac
+[ -n "${HOME:-}" ] && roots="$roots $HOME ${HOME}/web ${HOME}/docker"
+
+# shellcheck disable=SC2086
+find $roots \
+  -maxdepth 12 \
+  \( -name node_modules -o -name vendor -o -name .git -o -name cache -o -name .cache -o -name .npm -o -name storage \
+     -o -name packages -o -path '*/core/packages' -o -path '*/assets/components' \) -prune -o \
+  \( \
+    -path '*/core/config/config.inc.php' -type f -print -o \
+    -name 'wp-config.php' -type f -print -o \
+    -name '.env' -type f -print \
+  \) \
+  2>/dev/null \
+| grep -Ev '/(vendor|node_modules|\.git|cache|\.cache)/' \
+| grep -Ev '/assets/components/.*/vue/\.env$' \
 | grep -Ev '/\.env\.' \
 | head -n 250 \
 | sort -u

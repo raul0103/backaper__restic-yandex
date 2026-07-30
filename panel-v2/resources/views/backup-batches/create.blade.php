@@ -16,16 +16,17 @@
 <div class="mb-8 flex flex-wrap items-end justify-between gap-4">
     <div>
         <h1 class="page-title">Очередь бэкапа</h1>
-        <p class="page-subtitle">Серверы по одному. Быстрый запуск — на странице «Серверы».</p>
+        <p class="page-subtitle">Серверы по одному. Одновременно работает только одна очередь — следующие ждут.</p>
     </div>
     <a href="{{ route('servers.index') }}" class="btn btn-secondary">← К списку серверов</a>
 </div>
 
 @if ($activeBatch)
     <div class="alert alert-warning mb-6">
-        Уже есть активная очередь
+        Сейчас активна очередь
         <a href="{{ route('backup-batches.show', $activeBatch) }}" class="font-semibold underline">#{{ $activeBatch->id }}</a>
         ({{ $activeBatch->statusLabel() }}).
+        Новую можно добавить — она <strong>встанет в ожидание</strong> и стартует после текущей.
     </div>
 @endif
 
@@ -41,35 +42,41 @@
                 <button type="button" class="btn-ghost" id="select-none">Снять</button>
             </div>
         </div>
+        <p class="flex flex-wrap items-center gap-4 text-xs text-slate-500 mb-3">
+            <span class="inline-flex items-center gap-1.5"><span class="inline-block w-1 h-3 rounded-sm" style="background:#8b5cf6"></span> VPS</span>
+            <span class="inline-flex items-center gap-1.5"><span class="inline-block w-1 h-3 rounded-sm" style="background:#14b8a6"></span> Хостинг</span>
+        </p>
 
         @php $ready = $servers->filter(fn ($s) => $s->readyForBackup()); @endphp
 
         @forelse ($servers as $server)
             @php
                 $ok = $server->readyForBackup();
-                $checked = $ok && in_array($server->id, $preselected ?? [], true);
+                $inQueue = in_array($server->id, $queuedServerIds ?? [], true);
+                $canQueue = $ok && ! $inQueue;
+                $checked = $canQueue && in_array($server->id, $preselected ?? [], true);
             @endphp
-            <label class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 mb-2 {{ $ok ? 'hover:border-brand-500 cursor-pointer' : 'opacity-50' }} {{ $checked ? 'border-brand-500 bg-brand-50' : '' }}">
+            <label class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 mb-2 {{ $server->isVps() ? 'server-kind-vps' : 'server-kind-hosting' }} {{ $canQueue ? 'hover:border-brand-500 cursor-pointer' : 'opacity-50 cursor-not-allowed' }} {{ $checked ? 'border-brand-500 bg-brand-50' : '' }}">
                 <input
                     type="checkbox"
                     name="server_ids[]"
                     value="{{ $server->id }}"
                     class="mt-1 server-cb accent-teal-600"
-                    data-ready="{{ $ok ? '1' : '0' }}"
+                    data-ready="{{ $canQueue ? '1' : '0' }}"
                     data-days="{{ $server->daysSinceBackup() ?? 9999 }}"
                     @checked($checked)
-                    @disabled(! $ok)
+                    @disabled(! $canQueue)
                 >
                 <span class="flex-1 min-w-0">
                     <span class="font-semibold text-slate-900">{{ $server->name }}</span>
-                    <span class="block text-xs text-slate-500 font-mono mt-0.5">
-                        {{ $server->ssh_user }}@{{ $server->host }}:{{ $server->ssh_port }}
-                    </span>
+                    @if ($inQueue)
+                        <span class="badge bg-blue-100 text-blue-800 ml-1 align-middle">в очереди</span>
+                    @endif
                     <span class="block text-sm mt-1" style="{{ $server->backupAgeStyle() }}">{{ $server->backupAgeLabel() }}</span>
                 </span>
-                @if ($ok)
-                    <span class="badge badge-success shrink-0">restic ок</span>
-                @else
+                @if ($inQueue)
+                    <span class="badge bg-blue-100 text-blue-800 shrink-0">уже в очереди</span>
+                @elseif (! $ok)
                     <span class="badge badge-warning shrink-0">нет restic</span>
                 @endif
             </label>

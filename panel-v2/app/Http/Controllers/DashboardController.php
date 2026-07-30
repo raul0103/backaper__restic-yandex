@@ -32,11 +32,8 @@ class DashboardController extends Controller
         );
 
         return view('dashboard', [
-            'servers' => Server::query()
-                ->orderByRaw('CASE WHEN last_backup_at IS NULL THEN 1 ELSE 0 END')
-                ->orderBy('last_backup_at')
-                ->orderBy('name')
-                ->get(),
+            'servers' => Server::listForUi(),
+            'queuedServerIds' => Server::activeQueueServerIds(),
             'activeBatches' => $activeBatches,
             'standaloneRuns' => $standaloneRuns,
         ]);

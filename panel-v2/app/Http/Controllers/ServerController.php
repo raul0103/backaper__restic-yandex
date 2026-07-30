@@ -12,14 +12,11 @@ class ServerController extends Controller
 {
     public function index(): View
     {
-        $servers = Server::query()
-            ->orderByRaw('CASE WHEN last_backup_at IS NULL THEN 1 ELSE 0 END')
-            ->orderBy('last_backup_at')
-            ->orderBy('name')
-            ->get();
+        $queuedServerIds = Server::activeQueueServerIds();
 
         return view('servers.index', [
-            'servers' => $servers,
+            'servers' => Server::listForUi(),
+            'queuedServerIds' => $queuedServerIds,
             'passtoreConfigured' => filled(config('services.passtore_token')),
         ]);
     }
@@ -167,9 +164,14 @@ class ServerController extends Controller
 
     public function destroy(Server $server): RedirectResponse
     {
+        if (in_array($server->id, Server::activeQueueServerIds(), true)) {
+            return back()->with('error', 'Нельзя удалить: сервер сейчас в активной очереди. Дождитесь завершения или отмените очередь.');
+        }
+
+        $name = $server->name;
         $server->delete();
 
-        return redirect()->route('servers.index')->with('success', 'Сервер удалён.');
+        return redirect()->route('servers.index')->with('success', "Сервер «{$name}» удалён из панели (бэкапы на Яндекс.Диске не трогали).");
     }
 
     public function setup(Server $server, RemoteSetupService $setup): RedirectResponse

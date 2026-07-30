@@ -24,6 +24,7 @@
         <h1 class="page-title">Серверы</h1>
         <p class="page-subtitle">
             Отметьте нужные → режим → «В очередь».
+            Одновременно одна очередь; следующие ждут.
             Готовых к бэкапу: <strong>{{ $readyCount }}</strong> из {{ $servers->count() }}
         </p>
     </div>
@@ -45,6 +46,10 @@
     <button type="button" class="btn-ghost" id="select-stale" title="Без бэкапа или старше 20 дней">Нужен бэкап</button>
     <span class="text-slate-400 ml-auto text-xs" id="selection-hint">0 выбрано</span>
 </div>
+<p class="flex flex-wrap items-center gap-4 text-xs text-slate-500 mb-4">
+    <span class="inline-flex items-center gap-1.5"><span class="inline-block w-1 h-3 rounded-sm" style="background:#8b5cf6"></span> VPS</span>
+    <span class="inline-flex items-center gap-1.5"><span class="inline-block w-1 h-3 rounded-sm" style="background:#14b8a6"></span> Хостинг</span>
+</p>
 @endif
 
 <form method="post" action="{{ route('backup-batches.store') }}" id="quick-queue-form">
@@ -52,17 +57,21 @@
     <input type="hidden" name="poll_minutes" value="15">
 
     @forelse ($servers as $server)
-        @php $ok = $server->readyForBackup(); @endphp
-        <div class="card server-row mb-2 p-4 {{ $ok ? '' : 'opacity-70' }}" data-server-row data-ready="{{ $ok ? '1' : '0' }}" data-days="{{ $server->daysSinceBackup() ?? 9999 }}">
+        @php
+            $ok = $server->readyForBackup();
+            $inQueue = in_array($server->id, $queuedServerIds ?? [], true);
+            $canQueue = $ok && ! $inQueue;
+        @endphp
+        <div class="card server-row mb-2 p-4 {{ $server->isVps() ? 'server-kind-vps' : 'server-kind-hosting' }} {{ $canQueue ? '' : 'opacity-70' }}" data-server-row data-ready="{{ $canQueue ? '1' : '0' }}" data-days="{{ $server->daysSinceBackup() ?? 9999 }}">
             <div class="flex flex-wrap items-start gap-3">
-                <label class="pt-1 {{ $ok ? 'cursor-pointer' : 'cursor-not-allowed' }}">
+                <label class="pt-1 {{ $canQueue ? 'cursor-pointer' : 'cursor-not-allowed' }}">
                     <input
                         type="checkbox"
                         name="server_ids[]"
                         value="{{ $server->id }}"
                         class="server-cb w-4 h-4 accent-teal-600"
-                        data-ready="{{ $ok ? '1' : '0' }}"
-                        @disabled(! $ok)
+                        data-ready="{{ $canQueue ? '1' : '0' }}"
+                        @disabled(! $canQueue)
                     >
                 </label>
 
@@ -71,31 +80,29 @@
                         <a href="{{ route('servers.show', $server) }}" class="text-lg font-semibold text-slate-900 no-underline hover:text-brand-700">
                             {{ $server->name }}
                         </a>
-                        <span class="badge badge-info">{{ $server->kindLabel() }}</span>
-                        @if ($server->is_setup_complete)
-                            <span class="badge badge-success">restic ок</span>
-                        @else
-                            <span class="badge badge-warning">restic не установлен</span>
+                        @if ($inQueue)
+                            <span class="badge bg-blue-100 text-blue-800">в очереди</span>
                         @endif
-                    </div>
-                    <div class="text-xs font-mono text-slate-400 mt-1">
-                        {{ $server->ssh_user }}@{{ $server->host }}:{{ $server->ssh_port }}
+                        @unless ($server->is_setup_complete)
+                            <span class="badge badge-warning">restic не установлен</span>
+                        @endunless
                     </div>
                     <div class="text-sm mt-2" style="{{ $server->backupAgeStyle() }}">
                         {{ $server->backupAgeLabel() }}
                     </div>
                 </div>
 
-                <div class="flex flex-col gap-2 shrink-0 items-end">
-                    <a href="{{ route('servers.show', $server) }}" class="btn btn-secondary !py-1.5 !text-xs">Открыть</a>
-                    @if ($ok)
+                <div class="flex flex-wrap gap-2 shrink-0 items-center">
+                    @if ($canQueue)
                         <button
                             type="button"
                             class="btn btn-primary !py-1.5 !text-xs"
                             data-queue-one="{{ $server->id }}"
                         >В очередь</button>
-                    @else
-                        <a href="{{ route('servers.show', $server) }}" class="text-xs text-amber-700 underline">Установить restic</a>
+                    @elseif ($inQueue)
+                        <span class="text-xs text-blue-700">Уже в очереди</span>
+                    @elseif (! $server->is_setup_complete)
+                        <a href="{{ route($server->wizardRoute(), $server) }}" class="btn btn-secondary !py-1.5 !text-xs">Установить</a>
                     @endif
                 </div>
             </div>

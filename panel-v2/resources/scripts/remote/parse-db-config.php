@@ -70,6 +70,21 @@ function label_from($path, $strip)
     return $out !== array() ? (string) end($out) : basename(dirname($path));
 }
 
+/** Для вложенных .env: web/docker/passtore/backend → passtore/backend */
+function env_label($path)
+{
+    $parts = array_values(array_filter(explode('/', str_replace('\\', '/', $path))));
+    $parts = array_values(array_filter($parts, function ($p) {
+        return $p !== '.env' && $p !== 'public_html' && $p !== 'current' && $p !== 'home' && $p !== 'var' && $p !== 'www';
+    }));
+    $n = count($parts);
+    if ($n >= 2) {
+        return $parts[$n - 2].'/'.$parts[$n - 1];
+    }
+
+    return $n > 0 ? $parts[$n - 1] : basename(dirname($path));
+}
+
 $host = null;
 $name = null;
 $user = null;
@@ -104,20 +119,69 @@ if ($base === 'config.inc.php') {
     $source = 'wordpress';
     $label = label_from($path, array('public_html', 'wp-config.php'));
 } elseif ($base === '.env') {
+    // Laravel / Symfony / generic DB_*
     $name = env_val($c, 'DB_DATABASE');
     $user = env_val($c, 'DB_USERNAME');
     $host = env_val($c, 'DB_HOST');
+    $pass = env_val($c, 'DB_PASSWORD');
+    $source = 'laravel';
+
+    // Docker-style MYSQL_*
+    if ($name === null || $name === '') {
+        $name = env_val($c, 'MYSQL_DATABASE');
+        if ($name !== null && $name !== '') {
+            $source = 'docker-mysql';
+            if ($user === null || $user === '') {
+                $user = env_val($c, 'MYSQL_USER');
+            }
+            if ($user === null || $user === '') {
+                $user = 'root';
+            }
+            if ($pass === null || $pass === '') {
+                $p = env_val($c, 'MYSQL_PASSWORD');
+                if ($p === null || $p === '') {
+                    $p = env_val($c, 'MYSQL_ROOT_PASSWORD');
+                }
+                $pass = $p;
+            }
+            if ($host === null || $host === '') {
+                $host = env_val($c, 'MYSQL_HOST');
+            }
+        }
+    }
+
+    // DATABASE_URL=mysql://user:pass@host:3306/dbname
+    if (($name === null || $name === '') && ($url = env_val($c, 'DATABASE_URL')) !== null && $url !== '') {
+        $parts = parse_url($url);
+        if (is_array($parts) && isset($parts['scheme'])
+            && in_array(strtolower($parts['scheme']), array('mysql', 'mysqli', 'mariadb'), true)
+        ) {
+            $source = 'database-url';
+            $name = isset($parts['path']) ? ltrim($parts['path'], '/') : null;
+            if ($user === null || $user === '') {
+                $user = isset($parts['user']) ? rawurldecode($parts['user']) : null;
+            }
+            if ($pass === null || $pass === '') {
+                $pass = isset($parts['pass']) ? rawurldecode($parts['pass']) : '';
+            }
+            if ($host === null || $host === '') {
+                $host = isset($parts['host']) ? $parts['host'] : 'localhost';
+                if (isset($parts['port'])) {
+                    $host .= ':'.$parts['port'];
+                }
+            }
+        }
+    }
+
     if ($host === null || $host === '') {
         $host = 'localhost';
     }
-    $pass = env_val($c, 'DB_PASSWORD');
     if ($pass === null) {
         $pass = '';
     }
-    $source = 'laravel';
-    $label = label_from($path, array('.env', 'public_html', 'current'));
+    $label = env_label($path);
     if ($name === null || $name === '') {
-        fwrite(STDERR, "no DB_DATABASE\n");
+        fwrite(STDERR, "no DB_DATABASE/MYSQL_DATABASE/DATABASE_URL\n");
         exit(1);
     }
 } else {
