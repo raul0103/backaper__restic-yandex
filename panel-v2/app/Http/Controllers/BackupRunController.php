@@ -6,10 +6,31 @@ use App\Models\BackupRun;
 use App\Services\BackupLogParser;
 use App\Services\BackupOrchestrator;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class BackupRunController extends Controller
 {
+    public function index(Request $request): View
+    {
+        $query = BackupRun::query()->with('server')->latest('id');
+
+        if ($status = $request->string('status')->toString()) {
+            if (in_array($status, ['running', 'completed', 'failed', 'pending'], true)) {
+                $query->where('status', $status);
+            }
+        }
+
+        if ($serverId = $request->integer('server_id')) {
+            $query->where('server_id', $serverId);
+        }
+
+        return view('backup-runs.index', [
+            'runs' => $query->paginate(30)->withQueryString(),
+            'filterStatus' => $request->string('status')->toString(),
+        ]);
+    }
+
     public function show(BackupRun $backupRun): View
     {
         $backupRun->load(['server']);

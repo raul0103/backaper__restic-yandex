@@ -28,5 +28,8 @@ Route::get('backups/batch/{backupBatch}', [BackupBatchController::class, 'show']
 Route::get('backups/batch/{backupBatch}/status', [BackupBatchController::class, 'status'])->name('backup-batches.status');
 Route::post('backups/batch/{backupBatch}/cancel', [BackupBatchController::class, 'cancel'])->name('backup-batches.cancel');
 
+Route::get('backup-runs', [BackupRunController::class, 'index'])->name('backup-runs.index');
 Route::get('backup-runs/{backupRun}', [BackupRunController::class, 'show'])->name('backup-runs.show');
 Route::get('backup-runs/{backupRun}/status', [BackupRunController::class, 'status'])->name('backup-runs.status');
+
+Route::post('servers/sync-passtore', [ServerController::class, 'syncPasstore'])->name('servers.sync-passtore');

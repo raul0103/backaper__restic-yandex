@@ -22,7 +22,6 @@ class DashboardController extends Controller
             ->latest('started_at')
             ->get();
 
-        // Прогоны из активных очередей уже видны через batch — не дублируем
         $batchRunIds = $activeBatches
             ->flatMap(fn (BackupBatch $b) => $b->items->pluck('backup_run_id'))
             ->filter()
@@ -32,18 +31,14 @@ class DashboardController extends Controller
             fn (BackupRun $run) => in_array($run->id, $batchRunIds, true)
         );
 
-        $recentRuns = BackupRun::query()
-            ->whereIn('status', ['completed', 'failed'])
-            ->with('server')
-            ->latest('finished_at')
-            ->limit(8)
-            ->get();
-
         return view('dashboard', [
-            'servers' => Server::query()->latest()->get(),
+            'servers' => Server::query()
+                ->orderByRaw('CASE WHEN last_backup_at IS NULL THEN 1 ELSE 0 END')
+                ->orderBy('last_backup_at')
+                ->orderBy('name')
+                ->get(),
             'activeBatches' => $activeBatches,
             'standaloneRuns' => $standaloneRuns,
-            'recentRuns' => $recentRuns,
         ]);
     }
 }

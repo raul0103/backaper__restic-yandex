@@ -99,6 +99,9 @@ class BackupOrchestrator
                 'finished_at' => now(),
                 'remote_pid' => null,
             ]);
+            if ($run->fresh()->status === 'completed') {
+                $run->server->markBackupCompleted();
+            }
         } catch (\Throwable $e) {
             // Обрыв SSH при опросе ≠ смерть бэкапа. CLI в screen живёт, панель не должна ставить failed.
             try {

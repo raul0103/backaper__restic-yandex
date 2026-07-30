@@ -9,7 +9,7 @@
         <p class="page-subtitle">SSH-серверы и очередь массовых бэкапов (по одному, без перегрузки Яндекса)</p>
     </div>
     <div class="flex flex-wrap gap-2">
-        <a href="{{ route('guide') }}" class="text-sm text-brand-700 font-medium underline self-center">Как пользоваться</a>
+        <a href="{{ route('backup-runs.index') }}" class="btn btn-secondary">История</a>
         <a href="{{ route('backup-batches.create') }}" class="btn btn-primary">Массовый бэкап</a>
     </div>
 </div>
@@ -30,6 +30,8 @@
         <div class="card p-5 text-sm text-slate-500">
             Нет активных бэкапов.
             <a href="{{ route('backup-batches.create') }}" class="text-brand-700 underline ml-1">Запустить очередь</a>
+            ·
+            <a href="{{ route('backup-runs.index') }}" class="text-brand-700 underline">История</a>
         </div>
     @else
         <div class="space-y-3">
@@ -108,48 +110,35 @@
     @endif
 </section>
 
-@if ($recentRuns->isNotEmpty())
-<section class="mb-10">
-    <h2 class="section-title">Недавние</h2>
-    <div class="card divide-y divide-slate-100 overflow-hidden">
-        @foreach ($recentRuns as $run)
-            <a href="{{ route('backup-runs.show', $run) }}" class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 no-underline text-inherit hover:bg-slate-50">
-                <div>
-                    <span class="font-medium text-slate-900">#{{ $run->id }}</span>
-                    <span class="text-slate-600 text-sm ml-1">{{ $run->server?->name }}</span>
-                    <span class="block text-xs text-slate-400 mt-0.5">{{ $run->finished_at?->format('d.m.Y H:i') }}</span>
-                </div>
-                @if ($run->status === 'completed')
-                    <span class="badge badge-success">готово</span>
-                @else
-                    <span class="badge badge-error">ошибка</span>
-                @endif
-            </a>
-        @endforeach
-    </div>
-</section>
-@endif
-
 <section class="mb-10">
     <div class="flex items-center justify-between mb-4">
         <h2 class="section-title !mb-0">Серверы</h2>
-        <a href="{{ route('servers.create') }}" class="btn btn-secondary !py-2">+ Сервер</a>
+        <div class="flex gap-2">
+            <a href="{{ route('servers.index') }}" class="btn btn-secondary !py-2">Все серверы</a>
+            <a href="{{ route('servers.create') }}" class="btn btn-secondary !py-2">+ Сервер</a>
+        </div>
     </div>
     @forelse ($servers as $server)
         <a href="{{ route('servers.show', $server) }}" class="card card-hover block p-4 mb-2 no-underline text-inherit">
-            <div class="flex justify-between gap-3">
-                <span class="font-semibold text-slate-900">{{ $server->name }}</span>
-                <span class="text-xs text-slate-400">
-                    {{ $server->kindLabel() }} ·
-                    {{ $server->is_setup_complete ? 'restic ок' : 'нужна установка' }}
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <span class="font-semibold text-slate-900">{{ $server->name }}</span>
+                    <div class="text-xs font-mono text-slate-400 mt-1">{{ $server->ssh_user }}@{{ $server->host }}:{{ $server->ssh_port }}</div>
+                    <div class="text-sm mt-1.5" style="{{ $server->backupAgeStyle() }}">{{ $server->backupAgeLabel() }}</div>
+                </div>
+                <span class="text-xs shrink-0">
+                    @if ($server->is_setup_complete)
+                        <span class="badge badge-success">restic ок</span>
+                    @else
+                        <span class="badge badge-warning">restic не установлен</span>
+                    @endif
                 </span>
             </div>
-            <div class="text-xs font-mono text-slate-400 mt-1">{{ $server->ssh_user }}@{{ $server->host }}:{{ $server->ssh_port }}</div>
         </a>
     @empty
         <div class="card p-6 text-center text-slate-500 text-sm">
             Пока пусто. <a href="{{ route('servers.create') }}" class="text-brand-700 underline">Добавьте сервер</a>
-            или прочитайте <a href="{{ route('guide') }}" class="underline">инструкцию</a>.
+            или загрузите из Passtore на странице серверов.
         </div>
     @endforelse
 </section>
@@ -168,7 +157,6 @@
 @if ($hasActive)
 <script>
 (function () {
-    // Лёгкое обновление страницы, пока есть активные процессы
     setTimeout(function () { location.reload(); }, 30000);
 })();
 </script>

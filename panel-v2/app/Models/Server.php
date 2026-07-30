@@ -104,6 +104,9 @@ class Server extends Model
         'is_setup_complete',
         'setup_log',
         'last_discovered_at',
+        'last_backup_at',
+        'passtore_name',
+        'passtore_synced_at',
     ];
 
     protected function casts(): array
@@ -111,6 +114,8 @@ class Server extends Model
         return [
             'is_setup_complete' => 'boolean',
             'last_discovered_at' => 'datetime',
+            'last_backup_at' => 'datetime',
+            'passtore_synced_at' => 'datetime',
         ];
     }
 
@@ -195,6 +200,54 @@ class Server extends Model
     public function readyForBackup(): bool
     {
         return $this->is_setup_complete;
+    }
+
+    /** Дней с последнего успешного бэкапа; null = никогда. */
+    public function daysSinceBackup(): ?int
+    {
+        if (! $this->last_backup_at) {
+            return null;
+        }
+
+        return (int) $this->last_backup_at->diffInDays(now());
+    }
+
+    /**
+     * Цвет даты: зелёный свежий → красный к месяцу и дальше.
+     * Цель — примерно раз в месяц.
+     */
+    public function backupAgeStyle(): string
+    {
+        $days = $this->daysSinceBackup();
+        if ($days === null) {
+            return 'color:#b91c1c;font-weight:700';
+        }
+
+        $t = min(1.0, max(0.0, $days / 30));
+        $hue = (int) round(120 * (1 - $t));
+
+        return "color:hsl({$hue},78%,32%);font-weight:600";
+    }
+
+    public function backupAgeLabel(): string
+    {
+        $days = $this->daysSinceBackup();
+        if ($days === null) {
+            return 'бэкапа не было';
+        }
+        if ($days === 0) {
+            return 'сегодня '.$this->last_backup_at->format('H:i');
+        }
+        if ($days === 1) {
+            return 'вчера · '.$this->last_backup_at->format('d.m.Y');
+        }
+
+        return $days.' дн. назад · '.$this->last_backup_at->format('d.m.Y');
+    }
+
+    public function markBackupCompleted(?\DateTimeInterface $at = null): void
+    {
+        $this->update(['last_backup_at' => $at ?? now()]);
     }
 
     public function storageSlug(string $name): string

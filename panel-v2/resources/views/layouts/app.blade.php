@@ -68,6 +68,7 @@
                 <a href="{{ route('dashboard') }}" class="nav-link {{ request()->routeIs('dashboard') ? 'nav-link-active' : '' }}">Панель</a>
                 <a href="{{ route('servers.index') }}" class="nav-link {{ request()->routeIs('servers.*') && !request()->routeIs('servers.create') ? 'nav-link-active' : '' }}">Серверы</a>
                 <a href="{{ route('backup-batches.create') }}" class="nav-link {{ request()->routeIs('backup-batches.*') ? 'nav-link-active' : '' }}">Бэкап</a>
+                <a href="{{ route('backup-runs.index') }}" class="nav-link {{ request()->routeIs('backup-runs.*') ? 'nav-link-active' : '' }}">История</a>
                 <a href="{{ route('guide') }}" class="nav-link {{ request()->routeIs('guide') ? 'nav-link-active' : '' }}">Как пользоваться</a>
                 <a href="{{ route('servers.create') }}" class="btn btn-primary ml-2 !py-2 !px-3.5">+ Сервер</a>
             </div>

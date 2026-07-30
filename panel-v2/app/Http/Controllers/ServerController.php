@@ -12,9 +12,32 @@ class ServerController extends Controller
 {
     public function index(): View
     {
+        $servers = Server::query()
+            ->orderByRaw('CASE WHEN last_backup_at IS NULL THEN 1 ELSE 0 END')
+            ->orderBy('last_backup_at')
+            ->orderBy('name')
+            ->get();
+
         return view('servers.index', [
-            'servers' => Server::query()->latest()->get(),
+            'servers' => $servers,
+            'passtoreConfigured' => filled(config('services.passtore_token')),
         ]);
+    }
+
+    public function syncPasstore(\App\Services\PasstoreSyncService $sync): RedirectResponse
+    {
+        try {
+            $result = $sync->sync();
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        $msg = "Passtore: всего {$result['total']}, новых {$result['created']}, обновлено {$result['updated']}.";
+        if ($result['created'] > 0) {
+            $msg .= ' У новых серверов restic ещё не установлен — установите вручную.';
+        }
+
+        return redirect()->route('servers.index')->with('success', $msg);
     }
 
     public function create(): View

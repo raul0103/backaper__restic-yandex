@@ -35,4 +35,7 @@ return [
         ],
     ],
 
+    'passtore_token' => env('PASSTORE_TOKEN'),
+    'passtore_url' => env('PASSTORE_URL', 'https://passtore.mlt-development.ru'),
+
 ];
