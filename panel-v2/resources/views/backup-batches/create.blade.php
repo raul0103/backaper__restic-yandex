@@ -22,11 +22,17 @@
 </div>
 
 @if ($activeBatch)
-    <div class="alert alert-warning mb-6">
-        Сейчас активна очередь
-        <a href="{{ route('backup-batches.show', $activeBatch) }}" class="font-semibold underline">#{{ $activeBatch->id }}</a>
-        ({{ $activeBatch->statusLabel() }}).
-        Новую можно добавить — она <strong>встанет в ожидание</strong> и стартует после текущей.
+    <div class="alert alert-warning mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+            Сейчас активна очередь
+            <a href="{{ route('backup-batches.show', $activeBatch) }}" class="font-semibold underline">#{{ $activeBatch->id }}</a>
+            ({{ $activeBatch->statusLabel() }}).
+            Новую можно добавить — она <strong>встанет в ожидание</strong> и стартует после текущей.
+        </div>
+        <form method="post" action="{{ route('backup-batches.cancel', $activeBatch) }}" onsubmit="return confirm('Закрыть очередь #{{ $activeBatch->id }}?\n\nСледующая очередь стартует сразу.');">
+            @csrf
+            <button type="submit" class="btn btn-secondary !py-1.5 !text-xs !text-red-600 !border-red-200 hover:!bg-red-50">Закрыть очередь</button>
+        </form>
     </div>
 @endif
 

@@ -123,6 +123,6 @@ class BackupBatchController extends Controller
     {
         $batches->cancel($backupBatch);
 
-        return back()->with('success', 'Отмена запрошена. Текущий сервер остановится на следующей проверке; уже запущенный бэкап на SSH может продолжаться.');
+        return back()->with('success', 'Очередь закрыта. Следующая ожидающая очередь запущена, если была. Бэкап на SSH мог ещё идти — смотрите лог.');
     }
 }

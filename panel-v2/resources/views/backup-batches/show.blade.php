@@ -31,9 +31,9 @@
     </div>
     <div class="flex flex-wrap gap-2">
         @if ($batch->isActive())
-            <form method="post" action="{{ route('backup-batches.cancel', $batch) }}" onsubmit="return confirm('Отменить очередь? Текущий бэкап на сервере может продолжаться.');">
+            <form method="post" action="{{ route('backup-batches.cancel', $batch) }}" onsubmit="return confirm('Закрыть очередь?\n\nСледующая очередь стартует сразу.\nБэкап на сервере может ещё идти.');">
                 @csrf
-                <button type="submit" class="btn btn-secondary text-red-600">Отменить</button>
+                <button type="submit" class="btn btn-secondary !text-red-600 !border-red-200 hover:!bg-red-50">Закрыть очередь</button>
             </form>
         @endif
         <a href="{{ route('backup-batches.create') }}" class="btn btn-secondary">Новая очередь</a>

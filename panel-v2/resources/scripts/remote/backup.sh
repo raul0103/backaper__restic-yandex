@@ -205,6 +205,7 @@ if [[ "$DO_DBS" == "1" ]]; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     if [[ -f "$SCRIPT_DIR/backup-databases.sh" ]]; then
       set +e
+      # BACKAPER_RUN_LOG уже в env — heartbeat дампов пишется туда же
       bash "$SCRIPT_DIR/backup-databases.sh"
       db_ec=$?
       set -e

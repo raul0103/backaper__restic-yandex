@@ -30,7 +30,15 @@ mkdir -p "$TMP_DIR"
 cleanup() { rm -rf "$TMP_DIR"; }
 trap cleanup EXIT
 
-log() { printf '%s\n' "[db] $(date -Is) $*"; }
+log() {
+  local msg="[db] $(date -Is) $*"
+  # Пишем в run.log панели напрямую — иначе heartbeat при redirect stdout→.sql попадёт в дамп.
+  if [[ -n "${BACKAPER_RUN_LOG:-}" ]]; then
+    printf '%s\n' "$msg" >> "$BACKAPER_RUN_LOG" || true
+  else
+    printf '%s\n' "$msg"
+  fi
+}
 
 sanitize_slug() {
   echo "$1" | tr ' /:' '___' | tr -cd 'a-zA-Z0-9._-' | cut -c1-120
@@ -218,7 +226,13 @@ resolve_mysql_container() {
       [[ -f "$dir/$f" ]] || continue
       for svc in mysql mariadb db database; do
         cid="$(
-          cd "$dir" && docker compose -f "$f" ps -q "$svc" 2>/dev/null | head -1
+          cd "$dir" && {
+            if command -v timeout >/dev/null 2>&1; then
+              timeout 20 docker compose -f "$f" ps -q "$svc"
+            else
+              docker compose -f "$f" ps -q "$svc"
+            fi
+          } 2>/dev/null | head -1
         )"
         if [[ -n "$cid" ]]; then
           printf '%s' "$cid"
@@ -233,6 +247,52 @@ resolve_mysql_container() {
 }
 
 # Дамп внутри контейнера (mysqldump есть в mysql-образе, на хосте часто нет)
+# Лимит на один дамп (сек). Без него mysqldump может висеть часами без строк в логе.
+DUMP_TIMEOUT_SEC="${BACKAPER_DB_DUMP_TIMEOUT:-1800}"
+
+run_with_timeout() {
+  local secs="$1"; shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$secs" "$@"
+  else
+    "$@"
+  fi
+}
+
+# Запуск дампа с heartbeat и timeout. Redirect только на саму команду дампа.
+# usage: run_dump_with_progress db_name out errf -- cmd [args...]
+run_dump_with_progress() {
+  local db_name="$1" out="$2" errf="$3"
+  shift 3
+  [[ "${1:-}" == "--" ]] && shift
+  local hb_pid ec
+  (
+    while true; do
+      sleep 60
+      local sz=0
+      [[ -f "$out" ]] && sz="$(stat -c%s "$out" 2>/dev/null || echo 0)"
+      log "… mysqldump ещё работает: ${db_name} (уже ${sz} bytes)"
+    done
+  ) &
+  hb_pid=$!
+  set +e
+  run_with_timeout "$DUMP_TIMEOUT_SEC" "$@" >"$out" 2>"$errf"
+  ec=$?
+  set -e
+  kill "$hb_pid" 2>/dev/null || true
+  wait "$hb_pid" 2>/dev/null || true
+  return "$ec"
+}
+
+dump_err_message() {
+  local errf="$1" fallback="$2"
+  if [[ -s "$errf" ]]; then
+    grep -v 'Using a password' "$errf" 2>/dev/null | tr '\n' ' ' | head -c 240 > "$TMP_DIR/dump.last_err"
+  else
+    printf '%s' "$fallback" > "$TMP_DIR/dump.last_err"
+  fi
+}
+
 dump_via_docker() {
   local cid="$1" db_user="$2" db_pass="$3" db_name="$4" out="$5"
   local -a ignore=()
@@ -252,26 +312,26 @@ dump_via_docker() {
     fi
   fi
 
-  log "docker dump: container=${cid:0:12} db=${db_name}"
+  log "docker dump: container=${cid:0:12} db=${db_name} (timeout ${DUMP_TIMEOUT_SEC}s)"
 
   # 1) single-transaction
-  if docker exec -e MYSQL_PWD="$db_pass" "$cid" \
+  if run_dump_with_progress "$db_name" "$out" "$errf" -- \
+    docker exec -e MYSQL_PWD="$db_pass" "$cid" \
     "$dump_bin" -u"$db_user" --single-transaction --quick --routines --triggers \
-    --max-allowed-packet=512M "${ignore[@]}" "$db_name" \
-    >"$out" 2>"$errf"; then
+    --max-allowed-packet=512M "${ignore[@]}" "$db_name"; then
     [[ -s "$out" ]] && return 0
   fi
 
   # 2) без single-transaction
   log "RETRY docker mysqldump (без single-transaction): ${db_name}"
-  if docker exec -e MYSQL_PWD="$db_pass" "$cid" \
+  if run_dump_with_progress "$db_name" "$out" "$errf" -- \
+    docker exec -e MYSQL_PWD="$db_pass" "$cid" \
     "$dump_bin" -u"$db_user" --quick --routines --triggers \
-    --max-allowed-packet=512M --lock-tables=false "${ignore[@]}" "$db_name" \
-    >"$out" 2>"$errf"; then
+    --max-allowed-packet=512M --lock-tables=false "${ignore[@]}" "$db_name"; then
     [[ -s "$out" ]] && return 0
   fi
 
-  grep -v 'Using a password' "$errf" 2>/dev/null | tr '\n' ' ' | head -c 240 > "$TMP_DIR/dump.last_err"
+  dump_err_message "$errf" "docker dump timeout/fail after ${DUMP_TIMEOUT_SEC}s"
   return 1
 }
 
@@ -287,35 +347,42 @@ dump_via_host() {
   done < <(ignore_volatile_args "$db_name")
 
   errf="$TMP_DIR/dump.err"
+  log "host dump: ${db_name} @ ${db_host} (timeout ${DUMP_TIMEOUT_SEC}s, connect-timeout=15)"
 
-  if "${DUMP_BIN[@]}" -h "$db_host" -u "$db_user" --password="$db_pass" \
+  if run_dump_with_progress "$db_name" "$out" "$errf" -- \
+    "${DUMP_BIN[@]}" -h "$db_host" -u "$db_user" --password="$db_pass" \
+    --connect-timeout=15 \
     --single-transaction --quick --routines --triggers --max-allowed-packet=512M \
     "${ignore[@]}" \
-    "$db_name" > "$out" 2>"$errf"; then
+    "$db_name"; then
     return 0
   fi
 
   if grep -qE 'Error 1412|Table definition has changed' "$errf"; then
     log "RETRY mysqldump (1412): ${db_name}"
     sleep 2
-    if "${DUMP_BIN[@]}" -h "$db_host" -u "$db_user" --password="$db_pass" \
+    if run_dump_with_progress "$db_name" "$out" "$errf" -- \
+      "${DUMP_BIN[@]}" -h "$db_host" -u "$db_user" --password="$db_pass" \
+      --connect-timeout=15 \
       --single-transaction --quick --routines --triggers --max-allowed-packet=512M \
       "${ignore[@]}" \
-      "$db_name" > "$out" 2>"$errf"; then
+      "$db_name"; then
       return 0
     fi
   fi
 
   log "RETRY mysqldump (без single-transaction): ${db_name}"
-  if "${DUMP_BIN[@]}" -h "$db_host" -u "$db_user" --password="$db_pass" \
+  if run_dump_with_progress "$db_name" "$out" "$errf" -- \
+    "${DUMP_BIN[@]}" -h "$db_host" -u "$db_user" --password="$db_pass" \
+    --connect-timeout=15 \
     --quick --routines --triggers --max-allowed-packet=512M \
     --lock-tables=false \
     "${ignore[@]}" \
-    "$db_name" > "$out" 2>"$errf"; then
+    "$db_name"; then
     return 0
   fi
 
-  grep -v 'Using a password' "$errf" 2>/dev/null | tr '\n' ' ' | head -c 240 > "$TMP_DIR/dump.last_err"
+  dump_err_message "$errf" "host dump timeout/fail after ${DUMP_TIMEOUT_SEC}s @ ${db_host}"
   return 1
 }
 

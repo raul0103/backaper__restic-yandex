@@ -106,6 +106,10 @@
                                 <a href="{{ route('backup-runs.show', $current->backup_run_id) }}" class="btn btn-primary !py-2 !text-sm">Лог</a>
                             @endif
                             <a href="{{ route('backup-batches.show', $batch) }}" class="btn btn-secondary !py-2 !text-sm">Очередь</a>
+                            <form method="post" action="{{ route('backup-batches.cancel', $batch) }}" onsubmit="return confirm('Закрыть очередь #{{ $batch->id }}?\n\nСледующая очередь стартует сразу.\nБэкап на сервере может ещё идти.');">
+                                @csrf
+                                <button type="submit" class="btn btn-secondary !py-2 !text-sm !text-red-600 !border-red-200 hover:!bg-red-50">Закрыть</button>
+                            </form>
                         </div>
                     </div>
                 </div>

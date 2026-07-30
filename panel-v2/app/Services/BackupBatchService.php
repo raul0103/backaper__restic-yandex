@@ -300,24 +300,38 @@ class BackupBatchService
 
         $wasPending = $batch->status === 'pending';
 
+        $batch->loadMissing('items.backupRun');
+
+        foreach ($batch->items as $item) {
+            $run = $item->backupRun;
+            if ($run && $run->isRunning()) {
+                $note = "\n[panel] очередь закрыта вручную";
+                $run->update([
+                    'status' => 'failed',
+                    'finished_at' => now(),
+                    'log' => ($run->log ?? '').$note,
+                ]);
+            }
+        }
+
+        // Сразу закрываем очередь: не ждём SSH-опроса и мёртвого process-batch.
+        $batch->items()
+            ->whereIn('status', ['pending', 'running'])
+            ->update([
+                'status' => 'skipped',
+                'message' => $wasPending ? 'Отменено' : 'Очередь закрыта',
+                'finished_at' => now(),
+            ]);
+
         $batch->update([
             'status' => 'cancelled',
             'message' => $wasPending
                 ? 'Отменено до запуска'
-                : 'Отмена запрошена — текущий сервер дождётся следующей проверки',
-            'finished_at' => $wasPending ? now() : $batch->finished_at,
-            'current_item_id' => $wasPending ? null : $batch->current_item_id,
+                : 'Очередь закрыта. Бэкап на сервере мог продолжаться — смотрите лог.',
+            'finished_at' => now(),
+            'current_item_id' => null,
         ]);
 
-        if ($wasPending) {
-            $batch->items()
-                ->where('status', 'pending')
-                ->update([
-                    'status' => 'skipped',
-                    'message' => 'Отменено',
-                    'finished_at' => now(),
-                ]);
-            $this->tryStartNext();
-        }
+        $this->tryStartNext();
     }
 }
