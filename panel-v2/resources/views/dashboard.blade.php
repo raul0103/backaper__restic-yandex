@@ -138,7 +138,7 @@
         <span class="inline-flex items-center gap-1.5"><span class="inline-block w-1 h-3 rounded-sm" style="background:#14b8a6"></span> Хостинг</span>
     </p>
     @forelse ($servers->take(8) as $server)
-        <a href="{{ route('servers.show', $server) }}" class="card card-hover block p-3 mb-2 no-underline text-inherit {{ $server->isVps() ? 'server-kind-vps' : 'server-kind-hosting' }}">
+        <a href="{{ route('servers.edit', $server) }}" class="card card-hover block p-3 mb-2 no-underline text-inherit {{ $server->isVps() ? 'server-kind-vps' : 'server-kind-hosting' }}">
             <div class="flex flex-wrap items-center justify-between gap-2">
                 <div class="flex flex-wrap items-center gap-2 min-w-0">
                     <span class="font-semibold text-slate-900">{{ $server->name }}</span>

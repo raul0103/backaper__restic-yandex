@@ -37,8 +37,8 @@
 
 <pre id="run-log" class="log-block min-h-[320px] max-h-[70vh] overflow-y-auto">{{ $run->log ?: ($run->isRunning() ? 'Ожидание лога с сервера…' : 'Лог пуст') }}</pre>
 
-<a href="{{ route('servers.show', $run->server_id) }}" class="inline-flex items-center gap-1 mt-6 text-brand-600 font-medium text-sm hover:underline no-underline">
-    ← К серверу
+<a href="{{ route('servers.edit', $run->server_id) }}" class="inline-flex items-center gap-1 mt-6 text-brand-600 font-medium text-sm hover:underline no-underline">
+    ← К настройкам сервера
 </a>
 
 @if($run->isRunning())

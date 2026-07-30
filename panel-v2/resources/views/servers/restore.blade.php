@@ -4,7 +4,7 @@
 
 @section('content')
 <div class="mb-6">
-    <a href="{{ route('servers.show', $server) }}" class="text-sm text-brand-700 font-medium no-underline hover:underline">← К серверу {{ $server->name }}</a>
+    <a href="{{ route('servers.edit', $server) }}" class="text-sm text-brand-700 font-medium no-underline hover:underline">← К настройкам {{ $server->name }}</a>
 </div>
 
 <div class="mb-8">

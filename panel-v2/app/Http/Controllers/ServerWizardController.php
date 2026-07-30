@@ -14,7 +14,7 @@ class ServerWizardController extends Controller
     public function connect(Server $server): View|RedirectResponse
     {
         if ($server->isWizardComplete()) {
-            return redirect()->route('servers.show', $server);
+            return redirect()->route('servers.edit', $server);
         }
 
         return view('servers.wizard.connect', compact('server'));
@@ -61,7 +61,7 @@ class ServerWizardController extends Controller
     public function install(Server $server): View|RedirectResponse
     {
         if ($server->isWizardComplete()) {
-            return redirect()->route('servers.show', $server);
+            return redirect()->route('servers.edit', $server);
         }
         if (! $server->readyForRemoteSetup()) {
             return redirect()->route('servers.wizard.connect', $server)
@@ -83,8 +83,8 @@ class ServerWizardController extends Controller
 
             $server->update(['setup_step' => Server::STEP_COMPLETE]);
 
-            return redirect()->route('servers.show', $server)
-                ->with('success', 'Готово! restic установлен. Бэкапы запускайте по SSH — инструкция на странице сервера.');
+            return redirect()->route('servers.index')
+                ->with('success', 'Готово! restic установлен. Бэкапы — из списка серверов или вручную по SSH (Справка).');
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
         }

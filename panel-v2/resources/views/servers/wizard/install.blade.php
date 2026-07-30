@@ -33,7 +33,7 @@
         </button>
         <a href="{{ route('servers.wizard.connect', $server) }}" class="btn btn-secondary">← Назад</a>
         @if ($server->is_setup_complete)
-            <a href="{{ route('servers.show', $server) }}" class="btn btn-secondary">К серверу →</a>
+            <a href="{{ route('servers.index') }}" class="btn btn-secondary">К списку →</a>
         @endif
     </form>
 

@@ -12,7 +12,13 @@ Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 Route::get('/guide', [GuideController::class, 'index'])->name('guide');
 
 Route::resource('servers', ServerController::class)->except(['show']);
-Route::get('servers/{server}', [ServerController::class, 'show'])->name('servers.show');
+Route::get('servers/{server}', function (\App\Models\Server $server) {
+    if (! $server->isWizardComplete()) {
+        return redirect()->route($server->wizardRoute(), $server);
+    }
+
+    return redirect()->route('servers.edit', $server);
+})->name('servers.show');
 Route::get('servers/{server}/restore', [ServerController::class, 'restoreGuide'])->name('servers.restore');
 Route::post('servers/{server}/setup', [ServerController::class, 'setup'])->name('servers.setup');
 

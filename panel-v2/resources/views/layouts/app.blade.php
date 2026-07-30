@@ -84,10 +84,10 @@
 
             <div class="nav-desktop flex items-center gap-0.5 overflow-x-auto">
                 <a href="{{ route('dashboard') }}" class="nav-link {{ request()->routeIs('dashboard') ? 'nav-link-active' : '' }}" title="Активные бэкапы">Панель</a>
-                <a href="{{ route('servers.index') }}" class="nav-link {{ request()->routeIs('servers.index') || request()->routeIs('servers.show') || request()->routeIs('servers.edit') ? 'nav-link-active' : '' }}" title="Список SSH и быстрый запуск">Серверы</a>
+                <a href="{{ route('servers.index') }}" class="nav-link {{ request()->routeIs('servers.*') && ! request()->routeIs('servers.create') ? 'nav-link-active' : '' }}" title="Список SSH и быстрый запуск">Серверы</a>
                 <a href="{{ route('backup-batches.create') }}" class="nav-link {{ request()->routeIs('backup-batches.*') ? 'nav-link-active' : '' }}" title="Собрать очередь бэкапов">Очередь</a>
                 <a href="{{ route('backup-runs.index') }}" class="nav-link {{ request()->routeIs('backup-runs.*') ? 'nav-link-active' : '' }}" title="Логи всех запусков">История</a>
-                <a href="{{ route('guide') }}" class="nav-link {{ request()->routeIs('guide') ? 'nav-link-active' : '' }}">Справка</a>
+                <a href="{{ route('guide') }}" class="nav-link {{ request()->routeIs('guide') ? 'nav-link-active' : '' }}" title="CLI-инструкция">Ручной запуск</a>
                 <a href="{{ route('servers.create') }}" class="btn btn-primary ml-2 !py-1.5 !px-3 !text-xs">+ Сервер</a>
             </div>
 
@@ -98,7 +98,7 @@
             <a href="{{ route('servers.index') }}" class="nav-link block {{ request()->routeIs('servers.index') ? 'nav-link-active' : '' }}">Серверы — выбор и запуск</a>
             <a href="{{ route('backup-batches.create') }}" class="nav-link block {{ request()->routeIs('backup-batches.create') ? 'nav-link-active' : '' }}">Очередь — массовый бэкап</a>
             <a href="{{ route('backup-runs.index') }}" class="nav-link block {{ request()->routeIs('backup-runs.*') ? 'nav-link-active' : '' }}">История — логи</a>
-            <a href="{{ route('guide') }}" class="nav-link block {{ request()->routeIs('guide') ? 'nav-link-active' : '' }}">Справка</a>
+            <a href="{{ route('guide') }}" class="nav-link block {{ request()->routeIs('guide') ? 'nav-link-active' : '' }}">Ручной запуск — CLI</a>
             <a href="{{ route('servers.create') }}" class="btn btn-primary !mt-2 w-full">+ Сервер</a>
         </div>
     </nav>

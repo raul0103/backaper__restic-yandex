@@ -2,16 +2,46 @@
 
 @section('title', 'Изменить — '.$server->name)
 
+@section('nav_map')
+    <a href="{{ route('dashboard') }}">Панель</a>
+    <span class="sep">→</span>
+    <a href="{{ route('servers.index') }}">Серверы</a>
+    <span class="sep">→</span>
+    <strong class="text-slate-700">{{ $server->name }}</strong>
+@endsection
+
 @section('content')
-<div class="mb-8">
-    <h1 class="page-title">Изменить сервер</h1>
+<div class="flex flex-wrap items-start justify-between gap-4 mb-6">
+    <div>
+        <h1 class="page-title">{{ $server->name }}</h1>
+        <p class="page-subtitle">{{ $server->kindLabel() }} · настройки и действия</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+        @if ($server->readyForRemoteSetup())
+            <form method="post" action="{{ route('servers.setup', $server) }}">@csrf
+                <button type="submit" class="btn btn-secondary">
+                    {{ $server->is_setup_complete ? 'Переустановить restic' : 'Установить restic' }}
+                </button>
+            </form>
+        @endif
+        @if ($server->is_setup_complete)
+            <a href="{{ route('servers.restore', $server) }}" class="btn btn-secondary">Восстановление</a>
+        @endif
+        <a href="{{ route('guide') }}" class="btn btn-secondary">Ручной запуск</a>
+    </div>
 </div>
+
+@if (! $server->is_setup_complete)
+    <div class="alert alert-warning mb-6">
+        restic не готов. Нажмите <strong>«Установить restic»</strong> выше или пройдите
+        <a href="{{ route($server->wizardRoute(), $server) }}" class="underline font-medium">мастер установки</a>.
+    </div>
+@endif
 
 <div class="help-box mb-6">
     <strong>Когда нужна переустановка restic:</strong>
     если меняете пароль шифрования, имя папки на Яндекс.Диске или токен —
     либо удалили папки бэкапа на Диске.
-    После сохранения нажмите <strong>«Переустановить restic»</strong> на странице сервера.
 </div>
 
 <form method="post" action="{{ route('servers.update', $server) }}" class="card p-6 space-y-5">
@@ -64,7 +94,7 @@
     </div>
     <div class="flex gap-3">
         <button type="submit" class="btn btn-primary">Сохранить</button>
-        <a href="{{ route('servers.show', $server) }}" class="btn btn-secondary">Отмена</a>
+        <a href="{{ route('servers.index') }}" class="btn btn-secondary">К списку</a>
     </div>
 </form>
 

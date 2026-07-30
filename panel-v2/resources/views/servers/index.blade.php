@@ -35,6 +35,7 @@
                 <button type="submit" class="btn btn-secondary">Из Passtore</button>
             </form>
         @endif
+        <a href="{{ route('guide') }}" class="btn btn-secondary">Ручной запуск</a>
         <a href="{{ route('servers.create') }}" class="btn btn-primary">+ Сервер</a>
     </div>
 </div>
@@ -77,7 +78,7 @@
 
                 <div class="flex-1 min-w-0">
                     <div class="flex flex-wrap items-center gap-2">
-                        <a href="{{ route('servers.show', $server) }}" class="text-lg font-semibold text-slate-900 no-underline hover:text-brand-700">
+                        <a href="{{ route('servers.edit', $server) }}" class="text-lg font-semibold text-slate-900 no-underline hover:text-brand-700">
                             {{ $server->name }}
                         </a>
                         @if ($inQueue)
@@ -104,6 +105,7 @@
                     @elseif (! $server->is_setup_complete)
                         <a href="{{ route($server->wizardRoute(), $server) }}" class="btn btn-secondary !py-1.5 !text-xs">Установить</a>
                     @endif
+                    <a href="{{ route('servers.edit', $server) }}" class="btn btn-secondary !py-1.5 !text-xs">Изменить</a>
                 </div>
             </div>
         </div>

@@ -80,19 +80,10 @@ class ServerController extends Controller
             ->with('success', 'Сервер добавлен. Теперь установите restic на сервер.');
     }
 
-    public function show(Server $server): View|RedirectResponse
-    {
-        if (! $server->isWizardComplete()) {
-            return redirect()->route($server->wizardRoute(), $server);
-        }
-
-        return view('servers.show', compact('server'));
-    }
-
     public function restoreGuide(Server $server): View|RedirectResponse
     {
         if (! $server->is_setup_complete) {
-            return redirect()->route('servers.show', $server)
+            return redirect()->route('servers.edit', $server)
                 ->with('error', 'Сначала установите restic на сервере.');
         }
 
@@ -159,7 +150,7 @@ class ServerController extends Controller
                 ->with('warning', 'Изменены данные облака/пароля. Нужно переустановить restic на сервере.');
         }
 
-        return redirect()->route('servers.show', $server)->with('success', 'Сохранено.');
+        return redirect()->route('servers.edit', $server)->with('success', 'Сохранено.');
     }
 
     public function destroy(Server $server): RedirectResponse
