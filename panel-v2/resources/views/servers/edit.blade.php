@@ -92,6 +92,25 @@
         <label class="label">Токен Яндекс.Диска (оставьте пустым, чтобы не менять)</label>
         <textarea name="rclone_token" rows="3" class="textarea font-mono !text-xs">{{ old('rclone_token') }}</textarea>
     </div>
+    <div>
+        <label class="label">Последний бэкап</label>
+        <input
+            type="datetime-local"
+            name="last_backup_at"
+            value="{{ old('last_backup_at', $server->last_backup_at?->format('Y-m-d\TH:i')) }}"
+            class="input"
+        >
+        <p class="text-xs text-slate-400 mt-1">
+            Можно указать вручную (например после бэкапа вне панели).
+            Оставьте пустым — «бэкапа не было». При успешном бэкапе из очереди дата обновится сама.
+        </p>
+        @if ($server->last_backup_at)
+            <label class="inline-flex items-center gap-2 mt-2 text-sm text-slate-600 cursor-pointer">
+                <input type="checkbox" name="clear_last_backup_at" value="1" class="accent-teal-600" @checked(old('clear_last_backup_at'))>
+                Сбросить дату
+            </label>
+        @endif
+    </div>
     <div class="flex gap-3">
         <button type="submit" class="btn btn-primary">Сохранить</button>
         <a href="{{ route('servers.index') }}" class="btn btn-secondary">К списку</a>

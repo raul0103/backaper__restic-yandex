@@ -109,6 +109,8 @@ class ServerController extends Controller
             'restic_password' => ['required', 'string', 'min:8'],
             'restic_repo_slug' => ['nullable', 'string', 'max:120', 'regex:/^[A-Za-z0-9._-]+$/'],
             'rclone_token' => ['nullable', 'string'],
+            'last_backup_at' => ['nullable', 'date'],
+            'clear_last_backup_at' => ['nullable', 'boolean'],
         ]);
 
         $newSlug = $data['restic_repo_slug']
@@ -133,6 +135,14 @@ class ServerController extends Controller
         }
         if (array_key_exists('rclone_token', $data) && $data['rclone_token'] !== null && $data['rclone_token'] !== '') {
             $payload['rclone_token'] = $data['rclone_token'];
+        }
+
+        if (! empty($data['clear_last_backup_at'])) {
+            $payload['last_backup_at'] = null;
+        } elseif (array_key_exists('last_backup_at', $data)) {
+            $payload['last_backup_at'] = $data['last_backup_at']
+                ? \Illuminate\Support\Carbon::parse($data['last_backup_at'])
+                : null;
         }
 
         if ($cloudChanged) {
