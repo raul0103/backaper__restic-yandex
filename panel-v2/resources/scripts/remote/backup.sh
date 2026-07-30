@@ -80,6 +80,20 @@ ENV_FILE="$BACKAPER_ROOT/backaper.env"
 . "$ENV_FILE"
 
 export RESTIC_REPOSITORY RESTIC_PASSWORD
+if ! command -v jq >/dev/null 2>&1; then
+  mkdir -p "$HOME/bin"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64" -o "$HOME/bin/jq"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$HOME/bin/jq" "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64"
+  else
+    log "ERROR: jq не найден и нет curl/wget для установки"
+    exit 1
+  fi
+  chmod +x "$HOME/bin/jq"
+  export PATH="$HOME/bin:$PATH"
+fi
+
 RCLONE_REMOTE="$(jq -r '.rclone_remote' "$MANIFEST_FILE")"
 CLOUD_PREFIX="$(jq -r '.cloud_prefix' "$MANIFEST_FILE")"
 TIMESTAMP="$(date +%Y-%m-%d_%H-%M-%S)"
@@ -87,13 +101,6 @@ TIMESTAMP="$(date +%Y-%m-%d_%H-%M-%S)"
 if [[ -z "$RCLONE_REMOTE" || -z "$CLOUD_PREFIX" ]]; then
   log "ERROR: rclone_remote and cloud_prefix required"
   exit 1
-fi
-
-if ! command -v jq >/dev/null 2>&1; then
-  mkdir -p "$HOME/bin"
-  curl -fsSL "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64" -o "$HOME/bin/jq"
-  chmod +x "$HOME/bin/jq"
-  export PATH="$HOME/bin:$PATH"
 fi
 
 DO_FILES="$(jq -r 'if .backup_files == false then "0" else "1" end' "$MANIFEST_FILE")"
