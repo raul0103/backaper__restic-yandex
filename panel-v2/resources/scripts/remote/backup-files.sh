@@ -2,6 +2,14 @@
 # CLI: бэкап всех файлов (хостинг = $HOME) одним restic snapshot.
 # Панель для файлов использует backup.sh с backup_files=true.
 #
+# Рекомендуется (VPS):
+#   source ~/backaper/backaper.env
+#   systemd-run --unit=restic-backup-files --collect --working-directory="$HOME" \
+#     --property=Type=oneshot \
+#     /bin/bash -c 'source ~/backaper/backaper.env; exec bash ~/backaper/scripts/backup-files.sh'
+#
+# Fallback (screen):
+#   screen -S backup-files
 #   source ~/backaper/backaper.env
 #   bash ~/backaper/scripts/backup-files.sh
 #

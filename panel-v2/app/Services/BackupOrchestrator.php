@@ -191,6 +191,7 @@ class BackupOrchestrator
         $pidPath = $base.'/pid';
         $donePath = $base.'/done';
         $logPath = $base.'/run.log';
+        $unitPath = $base.'/unit';
 
         $this->uploadRemoteScripts($server);
 
@@ -203,6 +204,7 @@ class BackupOrchestrator
 
         $marker = 'backaper-backup-'.$run->id;
         $session = 'bp'.$run->id;
+        $unit = 'backaper-bp'.$run->id;
         $runScript = <<<BASH
 #!/bin/bash
 # {$marker}
@@ -225,34 +227,99 @@ BASH;
 
         $this->ssh->upload($server, $runScriptPath, $runScript);
 
-        // screen -dm переживает обрыв SSH панели (как ручной CLI). Fallback: nohup+setsid.
+        // systemd-run переживает обрыв SSH и даёт статус unit. Fallback: screen → nohup.
         $start = <<<BASH
 base={$base}
 mkdir -p "\$base"
-rm -f "{$donePath}" "{$pidPath}" "{$logPath}"
+rm -f "{$donePath}" "{$pidPath}" "{$logPath}" "{$unitPath}"
 chmod +x "{$runScriptPath}"
-printf '%s\n' "[panel] starting screen session {$session} at \$(date -Is)" > "{$logPath}"
+unit="{$unit}"
 session="{$session}"
-if command -v screen >/dev/null 2>&1; then
+started=0
+
+can_systemd=0
+if command -v systemd-run >/dev/null 2>&1 && command -v systemctl >/dev/null 2>&1; then
+  if [ "\$(id -u)" -eq 0 ]; then
+    can_systemd=1
+  elif systemctl --user is-system-running >/dev/null 2>&1; then
+    can_systemd=1
+    SYSTEMD_USER=1
+  fi
+fi
+
+if [ "\$can_systemd" = "1" ]; then
+  printf '%s\n' "[panel] starting systemd-run unit \$unit at \$(date -Is)" > "{$logPath}"
+  if [ "\${SYSTEMD_USER:-0}" = "1" ]; then
+    systemctl --user stop "\$unit" >/dev/null 2>&1 || true
+    systemctl --user reset-failed "\$unit" >/dev/null 2>&1 || true
+    if systemd-run --user \
+        --unit="\$unit" \
+        --collect \
+        --working-directory="\$HOME" \
+        --property=Type=oneshot \
+        /bin/bash -c "exec bash '{$runScriptPath}' >>'{$logPath}' 2>&1 < /dev/null"
+    then
+      printf '%s\n' "\$unit" > "{$unitPath}"
+      printf '%s\n' "user" >> "{$unitPath}"
+      printf '%s\n' "[panel] systemd-run --user --unit=\$unit" >> "{$logPath}"
+      started=1
+    fi
+  else
+    systemctl stop "\$unit" >/dev/null 2>&1 || true
+    systemctl reset-failed "\$unit" >/dev/null 2>&1 || true
+    if systemd-run \
+        --unit="\$unit" \
+        --collect \
+        --working-directory="\$HOME" \
+        --property=Type=oneshot \
+        /bin/bash -c "exec bash '{$runScriptPath}' >>'{$logPath}' 2>&1 < /dev/null"
+    then
+      printf '%s\n' "\$unit" > "{$unitPath}"
+      printf '%s\n' "system" >> "{$unitPath}"
+      printf '%s\n' "[panel] systemd-run --unit=\$unit (check: systemctl status \$unit)" >> "{$logPath}"
+      started=1
+    fi
+  fi
+  if [ "\$started" != "1" ]; then
+    printf '%s\n' "[panel] WARN: systemd-run failed, fallback…" >> "{$logPath}"
+  fi
+fi
+
+if [ "\$started" != "1" ] && command -v screen >/dev/null 2>&1; then
+  printf '%s\n' "[panel] starting screen session \$session at \$(date -Is)" >> "{$logPath}"
   screen -S "\$session" -X quit >/dev/null 2>&1 || true
   screen -dmS "\$session" bash -c 'trap "" HUP; exec bash "{$runScriptPath}" >> "{$logPath}" 2>&1 < /dev/null'
   printf '%s\n' "[panel] screen -dmS \$session (check: screen -ls)" >> "{$logPath}"
-else
-  nohup bash -c 'trap "" HUP; setsid bash "{$runScriptPath}" >> "{$logPath}" 2>&1 < /dev/null &' >/dev/null 2>&1
-  printf '%s\n' "[panel] started via nohup/setsid (no screen)" >> "{$logPath}"
+  started=1
 fi
-for i in 1 2 3 4 5 6 7 8 9 10; do
+
+if [ "\$started" != "1" ]; then
+  printf '%s\n' "[panel] starting via nohup/setsid at \$(date -Is)" >> "{$logPath}"
+  nohup bash -c 'trap "" HUP; setsid bash "{$runScriptPath}" >> "{$logPath}" 2>&1 < /dev/null &' >/dev/null 2>&1
+  printf '%s\n' "[panel] started via nohup/setsid" >> "{$logPath}"
+  started=1
+fi
+
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
   [ -f "{$pidPath}" ] && break
   sleep 0.5
 done
 if [ -f "{$pidPath}" ]; then
   cat "{$pidPath}"
+elif [ -f "{$unitPath}" ]; then
+  u=\$(head -1 "{$unitPath}")
+  scope=\$(sed -n '2p' "{$unitPath}")
+  if [ "\$scope" = "user" ]; then
+    systemctl --user show -p MainPID --value "\$u" 2>/dev/null || echo 0
+  else
+    systemctl show -p MainPID --value "\$u" 2>/dev/null || echo 0
+  fi
 else
   pgrep -f "{$marker}" | head -1 || echo 0
 fi
 BASH;
 
-        $output = trim($this->ssh->exec($server, $start, 60));
+        $output = trim($this->ssh->exec($server, $start, 90));
         $lines = array_values(array_filter(array_map('trim', explode("\n", $output))));
         $pid = (int) ($lines[array_key_last($lines)] ?? 0);
 
@@ -263,11 +330,24 @@ BASH;
             } catch (\Throwable) {
             }
 
-            throw new RuntimeException(
-                'Не удалось запустить бэкап на сервере'
-                .($output !== '' ? ': '.$output : '')
-                .($log !== '' ? ' | log: '.$log : ''),
-            );
+            // systemd мог стартовать, а MainPID ещё 0 — считаем ок, если unit/log есть
+            $unitOk = false;
+            try {
+                $unitMeta = trim($this->ssh->read($server, $unitPath));
+                $unitOk = $unitMeta !== '';
+            } catch (\Throwable) {
+            }
+
+            if (! $unitOk && ($log === '' || ! str_contains($log, '[panel] starting'))) {
+                throw new RuntimeException(
+                    'Не удалось запустить бэкап на сервере'
+                    .($output !== '' ? ': '.$output : '')
+                    .($log !== '' ? ' | log: '.$log : ''),
+                );
+            }
+
+            // псевдо-pid чтобы панель не падала; poll смотрит unit/done
+            return max($pid, 1);
         }
 
         return $pid;
@@ -280,8 +360,10 @@ BASH;
         $pidPath = $base.'/pid';
         $donePath = $base.'/done';
         $logPath = $base.'/run.log';
+        $unitPath = $base.'/unit';
         $marker = 'backaper-backup-'.$run->id;
         $session = 'bp'.$run->id;
+        $unit = 'backaper-bp'.$run->id;
 
         $check = <<<BASH
 if [ -f "{$donePath}" ]; then
@@ -293,6 +375,24 @@ if [ -f "{$donePath}" ]; then
   fi
   exit 0
 fi
+
+unit="{$unit}"
+scope=system
+if [ -f "{$unitPath}" ]; then
+  unit=\$(head -1 "{$unitPath}")
+  scope=\$(sed -n '2p' "{$unitPath}")
+fi
+if command -v systemctl >/dev/null 2>&1; then
+  if [ "\$scope" = "user" ]; then
+    st=\$(systemctl --user is-active "\$unit" 2>/dev/null || true)
+  else
+    st=\$(systemctl is-active "\$unit" 2>/dev/null || true)
+  fi
+  case "\$st" in
+    active|activating) echo RUNNING; exit 0 ;;
+  esac
+fi
+
 if command -v screen >/dev/null 2>&1 && screen -ls 2>/dev/null | grep -q "\.{$session}"; then
   echo RUNNING
   exit 0

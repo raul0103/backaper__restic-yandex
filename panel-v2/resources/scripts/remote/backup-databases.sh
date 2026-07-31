@@ -2,6 +2,13 @@
 # CLI: найти конфиги сайтов на лету → mysqldump → rclone на Яндекс.Диск.
 # Панель для БД использует backup.sh + манифест (уже найденные доступы).
 #
+# Рекомендуется (VPS):
+#   source ~/backaper/backaper.env
+#   systemd-run --unit=restic-backup-db --collect --working-directory="$HOME" \
+#     --property=Type=oneshot \
+#     /bin/bash -c 'source ~/backaper/backaper.env; exec bash ~/backaper/scripts/backup-databases.sh'
+#
+# Fallback:
 #   source ~/backaper/backaper.env
 #   bash ~/backaper/scripts/backup-databases.sh
 #

@@ -151,7 +151,7 @@
         if (data.running) {
             statusEl.classList.remove('hidden');
             statusEl.className = 'mb-4 rounded-xl border px-4 py-3 text-sm bg-blue-50 border-blue-200 text-blue-800';
-            statusEl.textContent = 'Идёт бэкап на сервере (screen)…'
+            statusEl.textContent = 'Идёт бэкап на сервере (systemd/screen)…'
                 + (data.remote_pid ? ' · PID ' + data.remote_pid : '')
                 + ' · лог обновляется каждые несколько секунд';
             return;
