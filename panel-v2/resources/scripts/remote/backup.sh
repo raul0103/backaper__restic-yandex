@@ -231,7 +231,7 @@ if [[ "$DO_DBS" == "1" ]]; then
     else
       dump_bin=(mysqldump)
     fi
-    mysql_args=(-h "$db_host" -u "$db_user" --password="$db_pass" --connect-timeout=10)
+    mysql_args=(-h "$db_host" -u "$db_user" --password="$db_pass")
 
     dump_sql="${TMP_DIR}/${db_slug}.sql"
     dump_gz="${dump_sql}.gz"

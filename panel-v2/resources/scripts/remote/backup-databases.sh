@@ -347,11 +347,10 @@ dump_via_host() {
   done < <(ignore_volatile_args "$db_name")
 
   errf="$TMP_DIR/dump.err"
-  log "host dump: ${db_name} @ ${db_host} (timeout ${DUMP_TIMEOUT_SEC}s, connect-timeout=15)"
+  log "host dump: ${db_name} @ ${db_host} (timeout ${DUMP_TIMEOUT_SEC}s)"
 
   if run_dump_with_progress "$db_name" "$out" "$errf" -- \
     "${DUMP_BIN[@]}" -h "$db_host" -u "$db_user" --password="$db_pass" \
-    --connect-timeout=15 \
     --single-transaction --quick --routines --triggers --max-allowed-packet=512M \
     "${ignore[@]}" \
     "$db_name"; then
@@ -363,7 +362,6 @@ dump_via_host() {
     sleep 2
     if run_dump_with_progress "$db_name" "$out" "$errf" -- \
       "${DUMP_BIN[@]}" -h "$db_host" -u "$db_user" --password="$db_pass" \
-      --connect-timeout=15 \
       --single-transaction --quick --routines --triggers --max-allowed-packet=512M \
       "${ignore[@]}" \
       "$db_name"; then
@@ -374,7 +372,6 @@ dump_via_host() {
   log "RETRY mysqldump (без single-transaction): ${db_name}"
   if run_dump_with_progress "$db_name" "$out" "$errf" -- \
     "${DUMP_BIN[@]}" -h "$db_host" -u "$db_user" --password="$db_pass" \
-    --connect-timeout=15 \
     --quick --routines --triggers --max-allowed-packet=512M \
     --lock-tables=false \
     "${ignore[@]}" \
