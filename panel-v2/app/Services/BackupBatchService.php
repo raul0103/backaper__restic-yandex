@@ -62,7 +62,8 @@ class BackupBatchService
     }
 
     /**
-     * Глобально одна очередь за раз: если никто не running — стартуем самую старую pending.
+     * Глобально одна очередь за раз: атомарно забираем pending → running, потом spawn.
+     * Иначе cancel + старый process-batch оба вызывают tryStartNext и стартуют два бэкапа.
      */
     public function tryStartNext(): ?BackupBatch
     {
@@ -79,9 +80,22 @@ class BackupBatchService
             return null;
         }
 
+        $claimed = BackupBatch::query()
+            ->where('id', $next->id)
+            ->where('status', 'pending')
+            ->update([
+                'status' => 'running',
+                'started_at' => $next->started_at ?? now(),
+                'message' => 'Очередь запущена',
+            ]);
+
+        if ($claimed === 0) {
+            return null;
+        }
+
         $this->spawnProcessor((int) $next->id);
 
-        return $next;
+        return $next->fresh();
     }
 
     public function spawnProcessor(int $batchId): void
@@ -107,6 +121,7 @@ class BackupBatchService
     {
         $batch->refresh();
         if ($batch->status === 'cancelled') {
+            // cancel() уже вызвал tryStartNext — не дублируем без нужды, но идемпотентно
             $this->tryStartNext();
 
             return $batch;
@@ -125,20 +140,33 @@ class BackupBatchService
             ->orderBy('id')
             ->first();
         if ($otherRunning) {
-            $batch->update([
-                'status' => 'pending',
-                'message' => "Ожидает завершения очереди #{$otherRunning->id}",
-            ]);
+            // Нас могли атомарно пометить running в tryStartNext — вернём в pending
+            BackupBatch::query()
+                ->where('id', $batch->id)
+                ->where('status', 'running')
+                ->update([
+                    'status' => 'pending',
+                    'message' => "Ожидает завершения очереди #{$otherRunning->id}",
+                ]);
 
             return $batch->fresh(['items.server', 'items.backupRun']);
         }
 
-        $batch->update([
-            'status' => 'running',
-            'started_at' => $batch->started_at ?? now(),
-            'message' => 'Очередь запущена',
-        ]);
+        if ($batch->status === 'pending') {
+            $claimed = BackupBatch::query()
+                ->where('id', $batch->id)
+                ->where('status', 'pending')
+                ->update([
+                    'status' => 'running',
+                    'started_at' => $batch->started_at ?? now(),
+                    'message' => 'Очередь запущена',
+                ]);
+            if ($claimed === 0) {
+                return $batch->fresh(['items.server', 'items.backupRun']);
+            }
+        }
 
+        $batch->refresh();
         $options = $batch->modeOptions();
         $poll = max(60, (int) $batch->poll_seconds);
         $hadFailure = false;
@@ -153,6 +181,21 @@ class BackupBatchService
             }
 
             if ($item->isTerminal()) {
+                continue;
+            }
+
+            // Уже запущен другим воркером — только ждём его run
+            if ($item->status === 'running' && $item->backup_run_id) {
+                $batch->update([
+                    'current_item_id' => $item->id,
+                    'message' => "Сервер: {$item->server->name}",
+                ]);
+                $this->waitExistingItem($batch, $item, $poll);
+                $item->refresh();
+                if ($item->status === 'failed') {
+                    $hadFailure = true;
+                }
+
                 continue;
             }
 
@@ -178,6 +221,13 @@ class BackupBatchService
             }
         }
 
+        $batch->refresh();
+        if ($batch->status === 'cancelled') {
+            $this->tryStartNext();
+
+            return $batch->fresh(['items.server', 'items.backupRun']);
+        }
+
         $batch->update([
             'status' => $hadFailure ? 'failed' : 'completed',
             'current_item_id' => null,
@@ -198,11 +248,25 @@ class BackupBatchService
      */
     private function runItem(BackupBatch $batch, BackupBatchItem $item, array $options, int $pollSeconds): void
     {
-        $item->update([
-            'status' => 'running',
-            'started_at' => now(),
-            'message' => 'Запуск по SSH…',
-        ]);
+        $claimed = BackupBatchItem::query()
+            ->where('id', $item->id)
+            ->where('status', 'pending')
+            ->update([
+                'status' => 'running',
+                'started_at' => now(),
+                'message' => 'Запуск по SSH…',
+            ]);
+
+        if ($claimed === 0) {
+            $item->refresh();
+            if ($item->status === 'running' && $item->backup_run_id) {
+                $this->waitExistingItem($batch, $item, $pollSeconds);
+            }
+
+            return;
+        }
+
+        $item->refresh();
 
         $run = $this->orchestrator->startServerBackup($item->server, $options);
         $item->update([
@@ -222,6 +286,35 @@ class BackupBatchService
             return;
         }
 
+        $this->waitForRun($batch, $item, $run, $pollSeconds);
+    }
+
+    private function waitExistingItem(BackupBatch $batch, BackupBatchItem $item, int $pollSeconds): void
+    {
+        $run = $item->backupRun;
+        if (! $run) {
+            return;
+        }
+
+        if ($run->isRunning()) {
+            $this->waitForRun($batch, $item, $run, $pollSeconds);
+        }
+
+        $item->refresh();
+        if ($item->isTerminal()) {
+            return;
+        }
+
+        $run->refresh();
+        $item->update([
+            'status' => $run->status === 'completed' ? 'completed' : 'failed',
+            'message' => $run->status === 'completed' ? 'Готово' : 'Бэкап завершился с ошибкой',
+            'finished_at' => now(),
+        ]);
+    }
+
+    private function waitForRun(BackupBatch $batch, BackupBatchItem $item, \App\Models\BackupRun $run, int $pollSeconds): void
+    {
         while ($run->fresh()->isRunning()) {
             $batch->refresh();
             if ($batch->status === 'cancelled') {
@@ -245,8 +338,6 @@ class BackupBatchService
                 'message' => 'Ещё работает… следующая SSH-проверка через '.($pollSeconds / 60).' мин',
             ]);
 
-            // Не блокируем на весь poll_seconds: UI/другой процесс мог уже
-            // пометить run completed — проверяем чаще короткими sleep.
             $deadline = time() + $pollSeconds;
             while (time() < $deadline) {
                 if (! $run->fresh()->isRunning()) {
@@ -267,6 +358,11 @@ class BackupBatchService
         }
 
         $run->refresh();
+        $item->refresh();
+        if ($item->isTerminal()) {
+            return;
+        }
+
         $item->update([
             'status' => $run->status === 'completed' ? 'completed' : 'failed',
             'message' => $run->status === 'completed' ? 'Готово' : 'Бэкап завершился с ошибкой',

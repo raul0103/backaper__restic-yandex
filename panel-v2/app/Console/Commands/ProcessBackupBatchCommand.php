@@ -27,12 +27,32 @@ class ProcessBackupBatchCommand extends Command
             return self::SUCCESS;
         }
 
-        set_time_limit(0);
-        $this->info("Очередь #{$batch->id}: режим {$batch->mode}, опрос каждые {$batch->poll_seconds} с");
+        $lockDir = storage_path('framework/locks');
+        if (! is_dir($lockDir)) {
+            mkdir($lockDir, 0775, true);
+        }
+        $lockFile = $lockDir.'/batch-'.$batch->id.'.lock';
+        $fp = fopen($lockFile, 'c+');
+        if ($fp === false || ! flock($fp, LOCK_EX | LOCK_NB)) {
+            $this->info("Очередь #{$batch->id} уже обрабатывается другим процессом");
+            if (is_resource($fp)) {
+                fclose($fp);
+            }
 
-        $batch = $batches->process($batch);
-        $this->info("Итог: {$batch->status} — {$batch->message}");
+            return self::SUCCESS;
+        }
 
-        return $batch->status === 'completed' ? self::SUCCESS : self::FAILURE;
+        try {
+            set_time_limit(0);
+            $this->info("Очередь #{$batch->id}: режим {$batch->mode}, опрос каждые {$batch->poll_seconds} с");
+
+            $batch = $batches->process($batch);
+            $this->info("Итог: {$batch->status} — {$batch->message}");
+
+            return $batch->status === 'completed' ? self::SUCCESS : self::FAILURE;
+        } finally {
+            flock($fp, LOCK_UN);
+            fclose($fp);
+        }
     }
 }
