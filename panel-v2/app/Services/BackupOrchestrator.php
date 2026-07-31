@@ -209,6 +209,14 @@ class BackupOrchestrator
 #!/bin/bash
 # {$marker}
 trap '' HUP
+# systemd часто не передаёт HOME — скрипты с set -u падают на \$HOME
+if [ -z "\${HOME:-}" ]; then
+  HOME=\$(getent passwd "\$(id -un)" 2>/dev/null | cut -d: -f6)
+  HOME="\${HOME:-/root}"
+  export HOME
+fi
+# Сброс stale done от предыдущей неудачной попытки (systemd → fallback screen)
+rm -f "{$donePath}"
 echo \$\$ > "{$pidPath}"
 export BACKAPER_MANIFEST="{$manifestPath}"
 export BACKAPER_RUN_LOG="{$logPath}"
@@ -247,6 +255,15 @@ if command -v systemd-run >/dev/null 2>&1 && command -v systemctl >/dev/null 2>&
   fi
 fi
 
+# Type=oneshot заставляет systemd-run ждать конца джоба (SSH таймаут / ложный fail).
+# Type=simple — detach сразу; HOME/USER передаём явно (systemd их часто чистит).
+home="\${HOME:-}"
+if [ -z "\$home" ]; then
+  home=\$(getent passwd "\$(id -un)" 2>/dev/null | cut -d: -f6)
+  home="\${home:-/root}"
+fi
+export HOME="\$home"
+
 if [ "\$can_systemd" = "1" ]; then
   printf '%s\n' "[panel] starting systemd-run unit \$unit at \$(date -Is)" > "{$logPath}"
   if [ "\${SYSTEMD_USER:-0}" = "1" ]; then
@@ -255,9 +272,11 @@ if [ "\$can_systemd" = "1" ]; then
     if systemd-run --user \
         --unit="\$unit" \
         --collect \
-        --working-directory="\$HOME" \
-        --property=Type=oneshot \
-        /bin/bash -c "exec bash '{$runScriptPath}' >>'{$logPath}' 2>&1 < /dev/null"
+        --working-directory="\$home" \
+        --property=Type=simple \
+        --setenv=HOME="\$home" \
+        --setenv=USER="\$(id -un)" \
+        /bin/bash -c "export HOME='\$home'; exec bash '{$runScriptPath}' >>'{$logPath}' 2>&1 < /dev/null"
     then
       printf '%s\n' "\$unit" > "{$unitPath}"
       printf '%s\n' "user" >> "{$unitPath}"
@@ -270,9 +289,11 @@ if [ "\$can_systemd" = "1" ]; then
     if systemd-run \
         --unit="\$unit" \
         --collect \
-        --working-directory="\$HOME" \
-        --property=Type=oneshot \
-        /bin/bash -c "exec bash '{$runScriptPath}' >>'{$logPath}' 2>&1 < /dev/null"
+        --working-directory="\$home" \
+        --property=Type=simple \
+        --setenv=HOME="\$home" \
+        --setenv=USER="\$(id -un)" \
+        /bin/bash -c "export HOME='\$home'; exec bash '{$runScriptPath}' >>'{$logPath}' 2>&1 < /dev/null"
     then
       printf '%s\n' "\$unit" > "{$unitPath}"
       printf '%s\n' "system" >> "{$unitPath}"
@@ -286,14 +307,17 @@ if [ "\$can_systemd" = "1" ]; then
 fi
 
 if [ "\$started" != "1" ] && command -v screen >/dev/null 2>&1; then
+  rm -f "{$donePath}" "{$pidPath}" "{$unitPath}"
   printf '%s\n' "[panel] starting screen session \$session at \$(date -Is)" >> "{$logPath}"
   screen -S "\$session" -X quit >/dev/null 2>&1 || true
+  # HOME уже export выше — screen наследует
   screen -dmS "\$session" bash -c 'trap "" HUP; exec bash "{$runScriptPath}" >> "{$logPath}" 2>&1 < /dev/null'
   printf '%s\n' "[panel] screen -dmS \$session (check: screen -ls)" >> "{$logPath}"
   started=1
 fi
 
 if [ "\$started" != "1" ]; then
+  rm -f "{$donePath}" "{$pidPath}" "{$unitPath}"
   printf '%s\n' "[panel] starting via nohup/setsid at \$(date -Is)" >> "{$logPath}"
   nohup bash -c 'trap "" HUP; setsid bash "{$runScriptPath}" >> "{$logPath}" 2>&1 < /dev/null &' >/dev/null 2>&1
   printf '%s\n' "[panel] started via nohup/setsid" >> "{$logPath}"
@@ -365,17 +389,9 @@ BASH;
         $session = 'bp'.$run->id;
         $unit = 'backaper-bp'.$run->id;
 
+        // Сначала «жив ли процесс», потом done: иначе stale done от упавшего
+        // systemd (HOME unbound) помечает failed, хотя screen уже бэкапит.
         $check = <<<BASH
-if [ -f "{$donePath}" ]; then
-  ec=\$(tr -d '[:space:]' < "{$donePath}")
-  if [ "\$ec" = "0" ] || [ "\$ec" = "done" ]; then
-    echo DONE
-  else
-    echo FAILED
-  fi
-  exit 0
-fi
-
 unit="{$unit}"
 scope=system
 if [ -f "{$unitPath}" ]; then
@@ -417,6 +433,17 @@ if pgrep -x restic >/dev/null 2>&1 || pgrep -f 'rclone serve restic' >/dev/null 
     fi
   fi
 fi
+
+if [ -f "{$donePath}" ]; then
+  ec=\$(tr -d '[:space:]' < "{$donePath}")
+  if [ "\$ec" = "0" ] || [ "\$ec" = "done" ]; then
+    echo DONE
+  else
+    echo FAILED
+  fi
+  exit 0
+fi
+
 if [ -f "{$logPath}" ]; then
   age=\$(( \$(date +%s) - \$(stat -c %Y "{$logPath}" 2>/dev/null || echo 0) ))
   if [ "\$age" -lt 300 ]; then

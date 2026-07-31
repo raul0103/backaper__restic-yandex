@@ -15,6 +15,12 @@
 # Нужны: php-cli, mysqldump|mariadb-dump, rclone, gzip
 set -euo pipefail
 
+if [[ -z "${HOME:-}" ]]; then
+  HOME="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f6 || true)"
+  HOME="${HOME:-/root}"
+  export HOME
+fi
+
 BACKAPER_ROOT="${BACKAPER_ROOT:-$HOME/backaper}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$BACKAPER_ROOT/backaper.env"

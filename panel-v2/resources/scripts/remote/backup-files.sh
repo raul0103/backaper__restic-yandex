@@ -17,6 +17,12 @@
 #              BACKAPER_BACKUP_ROOT=/  (VPS; по умолчанию $HOME)
 set -euo pipefail
 
+if [[ -z "${HOME:-}" ]]; then
+  HOME="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f6 || true)"
+  HOME="${HOME:-/root}"
+  export HOME
+fi
+
 BACKAPER_ROOT="${BACKAPER_ROOT:-$HOME/backaper}"
 ENV_FILE="$BACKAPER_ROOT/backaper.env"
 [[ -f "$ENV_FILE" ]] || ENV_FILE="$BACKAPER_ROOT/restic.env"

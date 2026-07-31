@@ -4,6 +4,13 @@
 #   2) rclone — отдельные дампы БД в {cloud}/{db}/{date}.sql.gz
 set -euo pipefail
 
+# systemd/minimal env может не передать HOME (set -u → unbound variable)
+if [[ -z "${HOME:-}" ]]; then
+  HOME="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f6 || true)"
+  HOME="${HOME:-/root}"
+  export HOME
+fi
+
 BACKAPER_ROOT="${BACKAPER_ROOT:-$HOME/backaper}"
 MANIFEST_FILE="$(mktemp)"
 TMP_DIR="${BACKAPER_ROOT}/tmp/backup-$$"
