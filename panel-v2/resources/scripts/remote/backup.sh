@@ -48,7 +48,9 @@ restic_run() {
     restic "$@"
     ec=$?
   fi
-  set -e
+  # Не включать set -e перед return: опции глобальные, и ненулевой return
+  # (restic exit 3 = «часть файлов не прочитана») сразу убьёт весь backup.sh
+  # до forget/prune и дампов БД.
   return "$ec"
 }
 
@@ -269,3 +271,4 @@ else
 fi
 
 log "BACKUP_COMPLETE"
+exit 0

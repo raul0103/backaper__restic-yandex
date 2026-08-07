@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\BackupBatch;
 use App\Models\Server;
 use App\Services\BackupBatchService;
+use App\Services\BackupOrchestrator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -90,9 +91,30 @@ class BackupBatchController extends Controller
         return view('backup-batches.show', ['batch' => $backupBatch]);
     }
 
-    public function status(BackupBatch $backupBatch): JsonResponse
+    public function status(BackupBatch $backupBatch, BackupOrchestrator $orchestrator): JsonResponse
     {
-        $backupBatch->load(['items.server', 'items.backupRun', 'currentItem.server']);
+        set_time_limit(120);
+
+        $backupBatch->load(['items.server', 'items.backupRun', 'currentItem.server', 'currentItem.backupRun']);
+
+        // Подтягиваем финал с сервера, если process-batch ещё спит / умер
+        $current = $backupBatch->currentItem;
+        $run = $current?->backupRun;
+        if ($run && $run->isRunning()) {
+            try {
+                $orchestrator->advanceBackup($run);
+                $run->refresh();
+                if (! $run->isRunning() && $current->status === 'running') {
+                    $current->update([
+                        'status' => $run->status === 'completed' ? 'completed' : 'failed',
+                        'message' => $run->status === 'completed' ? 'Готово' : 'Бэкап завершился с ошибкой',
+                        'finished_at' => now(),
+                    ]);
+                }
+            } catch (Throwable) {
+            }
+            $backupBatch->refresh()->load(['items.server', 'items.backupRun', 'currentItem.server']);
+        }
 
         return response()->json([
             'id' => $backupBatch->id,

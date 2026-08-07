@@ -81,8 +81,11 @@ class BackupOrchestrator
             }
 
             $log = $this->readRemoteLog($run, $run->server, full: true);
+            $ok = str_contains($log, 'BACKUP_COMPLETE');
 
-            if ($state === 'failed') {
+            // done/failed с сервера — финальное состояние; BACKUP_COMPLETE важнее кода выхода
+            // (restic exit 3 = часть файлов без доступа, снимок всё равно сохранён).
+            if ($state === 'failed' && ! $ok) {
                 $run->update([
                     'status' => 'failed',
                     'log' => $log !== '' ? $log : 'Бэкап на сервере завершился с ошибкой',
@@ -94,7 +97,7 @@ class BackupOrchestrator
             }
 
             $run->update([
-                'status' => str_contains($log, 'BACKUP_COMPLETE') ? 'completed' : 'failed',
+                'status' => $ok ? 'completed' : 'failed',
                 'log' => $log,
                 'finished_at' => now(),
                 'remote_pid' => null,
@@ -389,8 +392,9 @@ BASH;
         $session = 'bp'.$run->id;
         $unit = 'backaper-bp'.$run->id;
 
-        // Сначала «жив ли процесс», потом done: иначе stale done от упавшего
-        // systemd (HOME unbound) помечает failed, хотя screen уже бэкапит.
+        // Сначала процессы ЭТОГО бэкапа, потом done.
+        // Не смотрим `rclone serve restic` — это долгоживущий демон репозитория,
+        // из‑за него статус часами оставался running после runner exit.
         $check = <<<BASH
 unit="{$unit}"
 scope=system
@@ -424,19 +428,20 @@ if pgrep -f "{$marker}" >/dev/null 2>&1; then
   echo RUNNING
   exit 0
 fi
-if pgrep -x restic >/dev/null 2>&1 || pgrep -f 'rclone serve restic' >/dev/null 2>&1; then
-  if [ -f "{$logPath}" ]; then
-    age=\$(( \$(date +%s) - \$(stat -c %Y "{$logPath}" 2>/dev/null || echo 0) ))
-    if [ "\$age" -lt 900 ]; then
-      echo RUNNING
-      exit 0
-    fi
+# Только сам restic backup (не rclone serve) — пока done ещё не записан
+if pgrep -x restic >/dev/null 2>&1 && [ -f "{$logPath}" ]; then
+  age=\$(( \$(date +%s) - \$(stat -c %Y "{$logPath}" 2>/dev/null || echo 0) ))
+  if [ "\$age" -lt 900 ]; then
+    echo RUNNING
+    exit 0
   fi
 fi
 
 if [ -f "{$donePath}" ]; then
   ec=\$(tr -d '[:space:]' < "{$donePath}")
-  if [ "\$ec" = "0" ] || [ "\$ec" = "done" ]; then
+  if [ "\$ec" = "0" ] || [ "\$ec" = "done" ] || [ "\$ec" = "3" ]; then
+    echo DONE
+  elif [ -f "{$logPath}" ] && grep -q 'BACKUP_COMPLETE' "{$logPath}" 2>/dev/null; then
     echo DONE
   else
     echo FAILED

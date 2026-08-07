@@ -335,12 +335,16 @@ class BackupBatchService
             }
 
             $item->update([
-                'message' => 'Ещё работает… следующая SSH-проверка через '.($pollSeconds / 60).' мин',
+                'message' => 'Ещё работает… проверка SSH каждые ~30 с',
             ]);
 
             $deadline = time() + $pollSeconds;
             while (time() < $deadline) {
-                if (! $run->fresh()->isRunning()) {
+                // SSH-опрос чаще сна poll_seconds — иначе запись в БД часами «running»,
+                // пока никто не открыл страницу лога.
+                $this->orchestrator->advanceBackup($run->fresh());
+                $run->refresh();
+                if (! $run->isRunning()) {
                     break 2;
                 }
                 $batch->refresh();
